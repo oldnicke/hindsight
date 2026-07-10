@@ -614,8 +614,8 @@ class TestRetainHook:
         assert captured_calls[1]["items"][0]["document_id"] == "sess-compact-test-c1"
         assert "third question" in captured_calls[1]["items"][0]["content"]
 
-    def test_full_session_same_document_when_growing(self, monkeypatch, tmp_path):
-        """When transcript grows (no compaction), retain should keep the same document_id."""
+    def test_full_session_uses_delta_document_when_growing(self, monkeypatch, tmp_path):
+        """When transcript grows, retain should send only new messages in a new document chunk."""
         messages_2 = [
             {"role": "user", "content": "hello"},
             {"role": "assistant", "content": "world"},
@@ -642,9 +642,31 @@ class TestRetainHook:
         _run_hook("retain", hook_input, monkeypatch, tmp_path, urlopen_side_effect=capture)
 
         assert len(captured_calls) == 2
-        # Both should use the same plain session_id
         assert captured_calls[0]["items"][0]["document_id"] == "sess-grow-test"
-        assert captured_calls[1]["items"][0]["document_id"] == "sess-grow-test"
+        assert captured_calls[1]["items"][0]["document_id"] == "sess-grow-test-c1"
+        assert "hello" in captured_calls[0]["items"][0]["content"]
+        assert "more stuff" in captured_calls[1]["items"][0]["content"]
+        assert "hello" not in captured_calls[1]["items"][0]["content"]
+
+    def test_full_session_skips_when_transcript_has_no_new_messages(self, monkeypatch, tmp_path):
+        messages = [
+            {"role": "user", "content": "hello"},
+            {"role": "assistant", "content": "world"},
+        ]
+        transcript = make_transcript_file(tmp_path, messages)
+        hook_input = make_hook_input(transcript_path=transcript, session_id="sess-no-new")
+        captured_calls = []
+
+        def capture(req, timeout=None):
+            if "/memories" in req.full_url and "/recall" not in req.full_url:
+                captured_calls.append(json.loads(req.data.decode()))
+            return FakeHTTPResponse({})
+
+        _run_hook("retain", hook_input, monkeypatch, tmp_path, urlopen_side_effect=capture)
+        _run_hook("retain", hook_input, monkeypatch, tmp_path, urlopen_side_effect=capture)
+
+        assert len(captured_calls) == 1
+        assert captured_calls[0]["items"][0]["document_id"] == "sess-no-new"
 
     def test_full_session_respects_retain_every_n_turns(self, monkeypatch, tmp_path):
         """In full-session mode, retainEveryNTurns should still gate when retain fires."""
