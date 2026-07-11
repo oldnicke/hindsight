@@ -270,6 +270,77 @@ async def memory_no_llm(pg0_db_url, embeddings, cross_encoder, query_analyzer):
 
 
 @pytest.mark.asyncio
+async def test_append_mode_preserves_existing_memory_units(memory_no_llm, request_context):
+    """Append mode extends a document without replacing its existing memories."""
+    bank_id = f"test_append_preserve_{_ts()}"
+    document_id = "append-preserve-doc"
+
+    try:
+        first_units = await memory_no_llm.retain_async(
+            bank_id=bank_id,
+            content="Alice prefers PostgreSQL for analytics.",
+            document_id=document_id,
+            request_context=request_context,
+        )
+        assert first_units
+
+        pool = await memory_no_llm._get_pool()
+        async with pool.acquire() as conn:
+            before_rows = await conn.fetch(
+                "SELECT id, text FROM memory_units WHERE bank_id = $1 AND document_id = $2 ORDER BY created_at",
+                bank_id,
+                document_id,
+            )
+            before_chunk_count = await conn.fetchval(
+                "SELECT count(*) FROM chunks WHERE bank_id = $1 AND document_id = $2",
+                bank_id,
+                document_id,
+            )
+        assert before_rows
+        before_ids = {row["id"] for row in before_rows}
+
+        append_units = await memory_no_llm.retain_batch_async(
+            bank_id=bank_id,
+            contents=[
+                {
+                    "content": "Bob prefers Redis for caching.",
+                    "document_id": document_id,
+                    "update_mode": "append",
+                }
+            ],
+            request_context=request_context,
+        )
+        assert append_units and append_units[0]
+
+        async with pool.acquire() as conn:
+            after_rows = await conn.fetch(
+                "SELECT id, text FROM memory_units WHERE bank_id = $1 AND document_id = $2 ORDER BY created_at",
+                bank_id,
+                document_id,
+            )
+            after_chunk_count = await conn.fetchval(
+                "SELECT count(*) FROM chunks WHERE bank_id = $1 AND document_id = $2",
+                bank_id,
+                document_id,
+            )
+            original_text = await conn.fetchval(
+                "SELECT original_text FROM documents WHERE bank_id = $1 AND id = $2",
+                bank_id,
+                document_id,
+            )
+
+        after_ids = {row["id"] for row in after_rows}
+        assert before_ids <= after_ids
+        assert len(after_rows) > len(before_rows)
+        assert after_chunk_count > before_chunk_count
+        assert "Alice prefers PostgreSQL" in original_text
+        assert "Bob prefers Redis" in original_text
+
+    finally:
+        await memory_no_llm.delete_bank(bank_id, request_context=request_context)
+
+
+@pytest.mark.asyncio
 @pytest.mark.flaky(reruns=2, reruns_delay=2)
 async def test_concurrent_upserts_no_duplicates(memory_no_llm, request_context):
     """

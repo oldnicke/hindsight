@@ -824,54 +824,37 @@ async def retain_batch(
     if update_mode == "append" and effective_doc_id and is_first_batch:
         async with acquire_with_retry(pool) as conn:
             existing_text = await fact_storage.get_document_content(conn, bank_id, effective_doc_id)
+            existing_chunks = await chunk_storage.load_existing_chunks(conn, bank_id, effective_doc_id)
         if existing_text:
-            # Prepend existing text as a new content item at the beginning
-            existing_content: RetainContentDict = {"content": existing_text}
-            # Copy context/tags from first item for consistency
-            first = contents_dicts[0]
-            if first.get("context"):
-                existing_content["context"] = first["context"]
-            if first.get("event_date"):
-                existing_content["event_date"] = first["event_date"]
-            if first.get("metadata"):
-                existing_content["metadata"] = first["metadata"]
-            if first.get("observation_scopes") is not None:
-                existing_content["observation_scopes"] = first["observation_scopes"]
-            if first.get("tags"):
-                existing_content["tags"] = first["tags"]
-            contents_dicts = [existing_content, *contents_dicts]
-            # Merge JSON arrays to keep original_text valid (#2409).
-            # Without this, combined_content joins items with "\n", producing
-            # "[...]\n[...]" which is not valid JSON. On the next append cycle
-            # chunk_text() fails to parse it and falls through to sentence-
-            # boundary text splitting, breaking speaker attribution.
+            incoming_text = (
+                document_body_override
+                if document_body_override is not None
+                else "\n".join([c.get("content", "") for c in contents_dicts])
+            )
+            appended_body = f"{existing_text}\n{incoming_text}"
+
+            # Keep stored original_text valid for JSON-array transcripts (#2409),
+            # but do not reprocess the old text. Append should accumulate memory:
+            # old chunks/memory_units remain attached to the document, and only
+            # this request's new content is extracted into additional chunks.
             try:
-                _merged = []
-                for _item in contents_dicts:
-                    _parsed = json.loads(_item.get("content", ""))
-                    if isinstance(_parsed, list) and all(isinstance(_e, dict) for _e in _parsed):
-                        _merged.extend(_parsed)
-                    else:
-                        _merged = None
-                        break
-                if _merged is not None:
-                    contents_dicts = [{"content": json.dumps(_merged, ensure_ascii=False)}]
-                    if first.get("context"):
-                        contents_dicts[0]["context"] = first["context"]
-                    if first.get("event_date"):
-                        contents_dicts[0]["event_date"] = first["event_date"]
-                    if first.get("metadata"):
-                        contents_dicts[0]["metadata"] = first["metadata"]
-                    if first.get("observation_scopes") is not None:
-                        contents_dicts[0]["observation_scopes"] = first["observation_scopes"]
-                    if first.get("tags"):
-                        contents_dicts[0]["tags"] = first["tags"]
+                existing_json = json.loads(existing_text)
+                incoming_json = json.loads(incoming_text)
+                if (
+                    isinstance(existing_json, list)
+                    and isinstance(incoming_json, list)
+                    and all(isinstance(entry, dict) for entry in existing_json)
+                    and all(isinstance(entry, dict) for entry in incoming_json)
+                ):
+                    appended_body = json.dumps([*existing_json, *incoming_json], ensure_ascii=False)
             except (json.JSONDecodeError, ValueError, TypeError):
                 pass
-            # Rebuild contents list to match
-            contents = _build_contents(contents_dicts, document_tags)
+
+            document_body_override = appended_body
+            chunk_index_offset = max((chunk.chunk_index for chunk in existing_chunks), default=-1) + 1
             log_buffer.append(
-                f"[append] Prepended {len(existing_text):,} chars from existing document {effective_doc_id}"
+                f"[append] Extending document {effective_doc_id}: preserving {len(existing_chunks)} existing chunks, "
+                f"appending {len(incoming_text):,} chars"
             )
 
     # --- Stale-request check (best-effort, before LLM extraction) ---
@@ -899,8 +882,13 @@ async def retain_batch(
             # billing cleanly instead of falling back to full-content billing.
             return [[] for _ in contents], TokenUsage(), 0
 
+    # Append mode should accumulate memory for the stable document_id. The retained
+    # document text is rewritten to the full appended body, but existing chunks and
+    # memory_units must stay in place while new chunks are added.
+    preserve_existing_document_units = update_mode == "append" and effective_doc_id is not None and is_first_batch
+
     # --- Delta retain: check if we can skip unchanged chunks ---
-    if is_first_batch:
+    if is_first_batch and update_mode != "append":
         delta_result = await _try_delta_retain(
             pool,
             embeddings_model,
@@ -986,6 +974,7 @@ async def retain_batch(
         document_body_override=document_body_override,
         chunk_index_offset=chunk_index_offset,
         progress_callback=progress_callback,
+        preserve_existing_document_units=preserve_existing_document_units,
     )
 
 
@@ -1126,6 +1115,7 @@ async def _streaming_retain_batch(
     document_body_override: str | None = None,
     chunk_index_offset: int = 0,
     progress_callback: "Callable[..., Awaitable[None]] | None" = None,
+    preserve_existing_document_units: bool = False,
 ) -> tuple[list[list[str]], TokenUsage]:
     """
     Process a large document in streaming mini-batches to bound memory usage.
@@ -1426,7 +1416,7 @@ async def _streaming_retain_batch(
                             effective_doc_id,
                             bank_id,
                         )
-                        if is_recovery:
+                        if is_recovery or preserve_existing_document_units:
                             await fact_storage.upsert_document_metadata(
                                 conn,
                                 bank_id,
@@ -1528,7 +1518,7 @@ async def _streaming_retain_batch(
 
                     if not doc_tracking_done[0]:
                         # --- First batch: document tracking (atomic with chunk write) ---
-                        if is_recovery:
+                        if is_recovery or preserve_existing_document_units:
                             await fact_storage.upsert_document_metadata(
                                 conn,
                                 bank_id,
@@ -1537,9 +1527,10 @@ async def _streaming_retain_batch(
                                 retain_params,
                                 merged_tags,
                             )
+                            reason = "recovery" if is_recovery else "append"
                             log_buffer.append(
                                 f"[streaming] Document {effective_doc_id} updated "
-                                f"(recovery, preserving existing chunks)"
+                                f"({reason}, preserving existing chunks)"
                             )
                         else:
                             await fact_storage.handle_document_tracking(
@@ -1720,7 +1711,7 @@ async def _streaming_retain_batch(
                         effective_doc_id,
                         bank_id,
                     )
-                    if is_recovery:
+                    if is_recovery or preserve_existing_document_units:
                         await fact_storage.upsert_document_metadata(
                             conn,
                             bank_id,
