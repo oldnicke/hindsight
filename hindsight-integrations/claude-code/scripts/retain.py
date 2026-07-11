@@ -32,7 +32,7 @@ from lib.content import (
     slice_last_turns_by_user_boundary,
 )
 from lib.daemon import get_api_url
-from lib.state import increment_turn_count, track_retention
+from lib.state import commit_retention, increment_turn_count, plan_retention
 
 
 def read_transcript(transcript_path: str) -> list:
@@ -95,6 +95,7 @@ def run_retain(hook_input: dict, force: bool = False) -> None:
     retain_full_window = False
     messages_to_retain = all_messages
     document_id = session_id
+    retention_progress = None
 
     # Respect retainEveryNTurns in both modes, unless force=True (SessionEnd final retain)
     if retain_every_n > 1 and not force:
@@ -124,23 +125,23 @@ def run_retain(hook_input: dict, force: bool = False) -> None:
             f"Chunked retain firing (window: {window_turns} turns, {len(messages_to_retain)} messages)",
         )
     else:
-        progress = track_retention(session_id, len(all_messages))
-        if progress.start_index >= len(all_messages):
+        retention_progress = plan_retention(session_id, len(all_messages))
+        if retention_progress.start_index >= len(all_messages):
             debug_log(config, f"No new messages for session {session_id}, skipping retain")
             return
-        messages_to_retain = all_messages[progress.start_index :]
-        retain_full_window = progress.start_index == 0
-        if progress.compacted:
+        messages_to_retain = all_messages[retention_progress.start_index :]
+        retain_full_window = retention_progress.start_index == 0
+        if retention_progress.compacted:
             debug_log(
                 config,
                 f"Compaction detected for session {session_id}: transcript shrank, "
-                f"retaining compacted transcript as chunk {progress.chunk_index}",
+                f"retaining compacted transcript as chunk {retention_progress.chunk_index}",
             )
-        document_id = session_id if progress.chunk_index == 0 else f"{session_id}-c{progress.chunk_index}"
+        document_id = session_id if retention_progress.chunk_index == 0 else f"{session_id}-c{retention_progress.chunk_index}"
         debug_log(
             config,
             f"Full session retain: {len(messages_to_retain)} new messages "
-            f"from {len(all_messages)} total into chunk {progress.chunk_index}",
+            f"from {len(all_messages)} total into chunk {retention_progress.chunk_index}",
         )
 
     # Format transcript
@@ -151,6 +152,8 @@ def run_retain(hook_input: dict, force: bool = False) -> None:
     )
 
     if not transcript:
+        if retention_progress is not None:
+            commit_retention(session_id, len(all_messages), retention_progress.chunk_index)
         debug_log(config, "Empty transcript after formatting, skipping retain")
         return
 
@@ -236,6 +239,8 @@ def run_retain(hook_input: dict, force: bool = False) -> None:
             tags=tags,
             timeout=15,
         )
+        if retention_progress is not None:
+            commit_retention(session_id, len(all_messages), retention_progress.chunk_index)
         debug_log(config, f"Retain response: {json.dumps(response)[:200]}")
     except Exception as e:
         print(f"[Hindsight] Retain failed: {e}", file=sys.stderr)

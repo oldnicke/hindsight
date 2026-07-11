@@ -167,6 +167,55 @@ def _locked_read_modify_write(state_name: str, lock_name: str, modify_fn):
     return result
 
 
+def plan_retention(session_id: str, message_count: int) -> RetentionProgress:
+    """Plan retention state without writing the checkpoint.
+
+    The caller must only commit the returned progress after the retain request
+    succeeds; otherwise a transient API failure would skip unsent messages on the
+    next hook run.
+    """
+    data = read_state("retention_tracking.json", {})
+    entry = data.get(session_id, {"message_count": 0, "chunk": 0})
+    last_count = entry["message_count"]
+    chunk = entry["chunk"]
+    compacted = False
+    start_index = last_count
+
+    if message_count < last_count:
+        # Transcript shrank — compaction happened. The compacted transcript is
+        # new canonical content, so send it as a fresh chunk rather than trying
+        # to diff it against the pre-compaction transcript.
+        chunk += 1
+        compacted = True
+        start_index = 0
+    elif message_count > last_count and last_count > 0:
+        # The transcript grew normally. Store only the new suffix in its own
+        # document so repeated Stop hooks grow linearly instead of resending
+        # the whole session under a replacement document_id.
+        chunk += 1
+    elif message_count == last_count:
+        start_index = message_count
+
+    return RetentionProgress(chunk_index=chunk, compacted=compacted, start_index=start_index)
+
+
+def commit_retention(session_id: str, message_count: int, chunk_index: int) -> None:
+    """Persist the checkpoint for a successful retain."""
+
+    def _update(data):
+        data[session_id] = {"message_count": message_count, "chunk": chunk_index}
+
+        # Cap tracked sessions
+        if len(data) > 10000:
+            sorted_keys = sorted(data.keys())
+            for k in sorted_keys[: len(sorted_keys) // 2]:
+                del data[k]
+
+        return data, None
+
+    _locked_read_modify_write("retention_tracking.json", "retention_tracking.lock", _update)
+
+
 def track_retention(session_id: str, message_count: int) -> RetentionProgress:
     """Track retention state, compaction, and the next unsent message offset.
 
@@ -181,39 +230,6 @@ def track_retention(session_id: str, message_count: int) -> RetentionProgress:
         compaction was detected, and the first message index to retain from the
         current transcript.
     """
-
-    def _update(data):
-        entry = data.get(session_id, {"message_count": 0, "chunk": 0})
-        last_count = entry["message_count"]
-        chunk = entry["chunk"]
-        compacted = False
-        start_index = last_count
-
-        if message_count < last_count:
-            # Transcript shrank — compaction happened. The compacted transcript is
-            # new canonical content, so send it as a fresh chunk rather than trying
-            # to diff it against the pre-compaction transcript.
-            chunk += 1
-            compacted = True
-            start_index = 0
-        elif message_count > last_count and last_count > 0:
-            # The transcript grew normally. Store only the new suffix in its own
-            # document so repeated Stop hooks grow linearly instead of resending
-            # the whole session under a replacement document_id.
-            chunk += 1
-        elif message_count == last_count:
-            start_index = message_count
-
-        entry["message_count"] = message_count
-        entry["chunk"] = chunk
-        data[session_id] = entry
-
-        # Cap tracked sessions
-        if len(data) > 10000:
-            sorted_keys = sorted(data.keys())
-            for k in sorted_keys[: len(sorted_keys) // 2]:
-                del data[k]
-
-        return data, RetentionProgress(chunk_index=chunk, compacted=compacted, start_index=start_index)
-
-    return _locked_read_modify_write("retention_tracking.json", "retention_tracking.lock", _update)
+    progress = plan_retention(session_id, message_count)
+    commit_retention(session_id, message_count, progress.chunk_index)
+    return progress

@@ -668,6 +668,33 @@ class TestRetainHook:
         assert len(captured_calls) == 1
         assert captured_calls[0]["items"][0]["document_id"] == "sess-no-new"
 
+    def test_full_session_retry_keeps_checkpoint_on_retain_failure(self, monkeypatch, tmp_path):
+        messages = [
+            {"role": "user", "content": "first question"},
+            {"role": "assistant", "content": "first answer"},
+        ]
+        transcript = make_transcript_file(tmp_path, messages)
+        hook_input = make_hook_input(transcript_path=transcript, session_id="sess-retry-test")
+        captured_calls = []
+        attempts = {"count": 0}
+
+        def fail_first_then_capture(req, timeout=None):
+            if "/memories" in req.full_url and "/recall" not in req.full_url:
+                attempts["count"] += 1
+                if attempts["count"] == 1:
+                    raise OSError("temporary retain failure")
+                captured_calls.append(json.loads(req.data.decode()))
+            return FakeHTTPResponse({})
+
+        _run_hook("retain", hook_input, monkeypatch, tmp_path, urlopen_side_effect=fail_first_then_capture)
+        _run_hook("retain", hook_input, monkeypatch, tmp_path, urlopen_side_effect=fail_first_then_capture)
+
+        assert attempts["count"] == 2
+        assert len(captured_calls) == 1
+        item = captured_calls[0]["items"][0]
+        assert item["document_id"] == "sess-retry-test"
+        assert "first question" in item["content"]
+
     def test_full_session_respects_retain_every_n_turns(self, monkeypatch, tmp_path):
         """In full-session mode, retainEveryNTurns should still gate when retain fires."""
         messages = [{"role": "user", "content": "hello"}, {"role": "assistant", "content": "world"}]

@@ -3,7 +3,7 @@
 import json
 
 import pytest
-from lib.state import read_state, track_retention, write_state
+from lib.state import commit_retention, plan_retention, read_state, track_retention, write_state
 
 
 @pytest.fixture(autouse=True)
@@ -113,6 +113,22 @@ class TestTrackRetention:
         assert progress.chunk_index == 1
         assert progress.compacted is True
         assert progress.start_index == 0
+
+
+class TestPlanCommitRetention:
+    def test_plan_does_not_persist_checkpoint(self):
+        progress = plan_retention("sess-1", 4)
+        assert progress.chunk_index == 0
+        assert progress.compacted is False
+        assert progress.start_index == 0
+        assert read_state("retention_tracking.json", {}) == {}
+
+    def test_commit_advances_next_plan(self):
+        commit_retention("sess-1", 4, 0)
+        progress = plan_retention("sess-1", 7)
+        assert progress.chunk_index == 1
+        assert progress.compacted is False
+        assert progress.start_index == 4
 
 
 # ---------------------------------------------------------------------------
