@@ -180,7 +180,7 @@ class ExtractedFact(BaseModel):
 
     model_config = ConfigDict(
         json_schema_mode="validation",
-        json_schema_extra={"required": ["what", "when", "where", "who", "why", "fact_type"]},
+        json_schema_extra={"required": ["what", "when", "where", "who", "why", "fact_type", "entities"]},
     )
 
     what: str = Field(description="Core fact - concise but complete (1-2 sentences)")
@@ -195,7 +195,7 @@ class ExtractedFact(BaseModel):
     fact_type: Literal["world", "assistant"] = Field(
         description="'world' = objective/external facts, including user preferences, rules, corrections, and constraints even when stated during a conversation. 'assistant' = actions, experiences, or observations the assistant/agent actually performed."
     )
-    entities: list[Entity] | None = Field(default=None, description="People, places, concepts")
+    entities: list[Entity] = Field(default_factory=list, description="People, places, concepts")
     causal_relations: list[FactCausalRelation] | None = Field(
         default=None, description="Links to previous facts (target_index < this fact's index)"
     )
@@ -286,7 +286,7 @@ class ExtractedFactVerbose(BaseModel):
 
     model_config = ConfigDict(
         json_schema_mode="validation",
-        json_schema_extra={"required": ["what", "when", "where", "who", "why", "fact_type"]},
+        json_schema_extra={"required": ["what", "when", "where", "who", "why", "fact_type", "entities"]},
     )
 
     what: str = Field(
@@ -348,8 +348,8 @@ class ExtractedFactVerbose(BaseModel):
         description="'world' = objective/external facts about the user, other people, events, general knowledge, preferences, rules, corrections, or constraints. 'assistant' = actions, experiences, or observations the assistant/agent actually performed (e.g., 'I changed X', 'I discovered Y')."
     )
 
-    entities: list[Entity] | None = Field(
-        default=None,
+    entities: list[Entity] = Field(
+        default_factory=list,
         description="Named entities, objects, AND abstract concepts from the fact. Include: people names, organizations, places, significant objects (e.g., 'coffee maker', 'car'), AND abstract concepts/themes (e.g., 'friendship', 'career growth', 'loss', 'celebration'). Extract anything that could help link related facts together.",
     )
 
@@ -378,7 +378,7 @@ class ExtractedFactNoCausal(BaseModel):
 
     model_config = ConfigDict(
         json_schema_mode="validation",
-        json_schema_extra={"required": ["what", "when", "where", "who", "why", "fact_type"]},
+        json_schema_extra={"required": ["what", "when", "where", "who", "why", "fact_type", "entities"]},
     )
 
     # Same fields as ExtractedFact but without causal_relations
@@ -397,8 +397,8 @@ class ExtractedFactNoCausal(BaseModel):
     fact_type: Literal["world", "assistant"] = Field(
         description="'world' = about the user/others, including user preferences, rules, corrections, and constraints. 'assistant' = actions or experiences the assistant/agent actually performed."
     )
-    entities: list[Entity] | None = Field(
-        default=None,
+    entities: list[Entity] = Field(
+        default_factory=list,
         description="Named entities, objects, and concepts from the fact.",
     )
 
@@ -426,7 +426,7 @@ class VerbatimExtractedFact(BaseModel):
 
     model_config = ConfigDict(
         json_schema_mode="validation",
-        json_schema_extra={"required": ["when", "where", "who", "fact_type"]},
+        json_schema_extra={"required": ["when", "where", "who", "fact_type", "entities"]},
     )
 
     when: str = Field(description="When it happened. 'N/A' if unknown.")
@@ -439,7 +439,7 @@ class VerbatimExtractedFact(BaseModel):
     fact_type: Literal["world", "assistant"] = Field(
         description="'world' = objective/external facts. 'assistant' = first-person actions, experiences, or observations by the speaker."
     )
-    entities: list[Entity] | None = Field(default=None, description="People, places, concepts")
+    entities: list[Entity] = Field(default_factory=list, description="People, places, concepts")
 
     @field_validator("entities", mode="before")
     @classmethod
@@ -731,6 +731,7 @@ ENTITIES
 ══════════════════════════════════════════════════════════════════════════
 
 Include: people names, organizations, places, key objects, abstract concepts (career, friendship, etc.)
+Always return the "entities" field as an array of objects with a "text" field, never as an array of strings.
 Always include "user" when fact is about the user.{examples}"""
 
 # Concise mode guidelines
@@ -767,15 +768,15 @@ Example 1 - Selective extraction (Event Date: June 10, 2024):
 Input: "Hey! How's it going? Good morning! So I'm planning my wedding - want a small outdoor ceremony. Just got back from Emily's wedding, she married Sarah at a rooftop garden. It was nice weather. I grabbed a coffee on the way."
 
 Output: ONLY 2 facts (skip greetings, weather, coffee):
-1. what="User planning wedding, wants small outdoor ceremony", who="user", why="N/A", entities=["user", "wedding"]
-2. what="Emily married Sarah at rooftop garden", who="Emily (user's friend), Sarah", occurred_start="2024-06-09", entities=["Emily", "Sarah", "wedding"]
+1. what="User planning wedding, wants small outdoor ceremony", who="user", why="N/A", entities=[{{"text": "user"}}, {{"text": "wedding"}}]
+2. what="Emily married Sarah at rooftop garden", who="Emily (user's friend), Sarah", occurred_start="2024-06-09", entities=[{{"text": "Emily"}}, {{"text": "Sarah"}}, {{"text": "wedding"}}]
 
 Example 2 - Professional context:
 Input: "Alice has 5 years of Kubernetes experience and holds CKA certification. She's been leading the infrastructure team since March. By the way, she prefers dark roast coffee."
 
 Output: ONLY 2 facts (skip coffee preference - too trivial):
-1. what="Alice has 5 years Kubernetes experience, CKA certified", who="Alice", entities=["Alice", "Kubernetes", "CKA"]
-2. what="Alice leads infrastructure team since March", who="Alice", entities=["Alice", "infrastructure"]
+1. what="Alice has 5 years Kubernetes experience, CKA certified", who="Alice", entities=[{{"text": "Alice"}}, {{"text": "Kubernetes"}}, {{"text": "CKA"}}]
+2. what="Alice leads infrastructure team since March", who="Alice", entities=[{{"text": "Alice"}}, {{"text": "infrastructure"}}]
 
 ══════════════════════════════════════════════════════════════════════════
 QUALITY OVER QUANTITY
@@ -932,6 +933,7 @@ Extract ALL of the following from the fact:
 - Significant objects mentioned (coffee maker, new car, wedding dress)
 - Abstract concepts/themes (friendship, career growth, loss, celebration)
 
+Always return the "entities" field as an array of objects with a "text" field, never as an array of strings.
 ALWAYS include "user" when fact is about the user.
 Extract anything that could help link related facts together."""
 
