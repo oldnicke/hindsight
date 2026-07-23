@@ -644,6 +644,473 @@
         }
       }
     },
+    "/v1/default/banks/{bank_id}/memories/{memory_id}/retention": {
+      "get": {
+        "tags": [
+          "Forgetting"
+        ],
+        "summary": "Api Get Memory Retention",
+        "operationId": "api_get_memory_retention_v1_default_banks__bank_id__memories__memory_id__retention_get",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Memory Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetentionDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/default/banks/{bank_id}/memories/{memory_id}/reinforce": {
+      "post": {
+        "tags": [
+          "Forgetting"
+        ],
+        "summary": "Api Reinforce Memory",
+        "operationId": "api_reinforce_memory_v1_default_banks__bank_id__memories__memory_id__reinforce_post",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Memory Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReinforceMemoryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetentionDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/default/banks/{bank_id}/memories/{memory_id}/retention-policy": {
+      "patch": {
+        "tags": [
+          "Forgetting"
+        ],
+        "summary": "Api Update Retention Policy",
+        "operationId": "api_update_retention_policy_v1_default_banks__bank_id__memories__memory_id__retention_policy_patch",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Memory Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetentionPolicyUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetentionDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/default/banks/{bank_id}/memories/{memory_id}/archive": {
+      "post": {
+        "tags": [
+          "Forgetting"
+        ],
+        "summary": "Api Archive Memory",
+        "operationId": "api_archive_memory_v1_default_banks__bank_id__memories__memory_id__archive_post",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Memory Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/default/banks/{bank_id}/memories/{memory_id}/unarchive": {
+      "post": {
+        "tags": [
+          "Forgetting"
+        ],
+        "summary": "Api Unarchive Memory",
+        "operationId": "api_unarchive_memory_v1_default_banks__bank_id__memories__memory_id__unarchive_post",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Memory Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/default/banks/{bank_id}/forgetting/stats": {
+      "get": {
+        "tags": [
+          "Forgetting"
+        ],
+        "summary": "Api Forgetting Stats",
+        "operationId": "api_forgetting_stats_v1_default_banks__bank_id__forgetting_stats_get",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForgettingStats"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/default/banks/{bank_id}/forgetting/archive-preview": {
+      "post": {
+        "tags": [
+          "Forgetting"
+        ],
+        "summary": "Api Archive Preview",
+        "operationId": "api_archive_preview_v1_default_banks__bank_id__forgetting_archive_preview_post",
+        "parameters": [
+          {
+            "name": "bank_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Bank Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchivePreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/default/banks/{bank_id}/memories/{memory_id}/history": {
       "get": {
         "tags": [
@@ -5973,6 +6440,27 @@
           "update_disposition": true
         }
       },
+      "ArchivePreview": {
+        "properties": {
+          "eligible_count": {
+            "type": "integer",
+            "title": "Eligible Count"
+          },
+          "sample_memory_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sample Memory Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "eligible_count",
+          "sample_memory_ids"
+        ],
+        "title": "ArchivePreview"
+      },
       "AsyncOperationSubmitResponse": {
         "properties": {
           "operation_id": {
@@ -9062,6 +9550,39 @@
           ]
         }
       },
+      "ForgettingStats": {
+        "properties": {
+          "active": {
+            "type": "integer",
+            "title": "Active"
+          },
+          "archived": {
+            "type": "integer",
+            "title": "Archived"
+          },
+          "exempt": {
+            "type": "integer",
+            "title": "Exempt"
+          },
+          "pending_events": {
+            "type": "integer",
+            "title": "Pending Events"
+          },
+          "below_threshold": {
+            "type": "integer",
+            "title": "Below Threshold"
+          }
+        },
+        "type": "object",
+        "required": [
+          "active",
+          "archived",
+          "exempt",
+          "pending_events",
+          "below_threshold"
+        ],
+        "title": "ForgettingStats"
+      },
       "GraphDataResponse": {
         "properties": {
           "nodes": {
@@ -12134,6 +12655,33 @@
         "title": "ReflectTrace",
         "description": "Execution trace of LLM and tool calls during reflection."
       },
+      "ReinforceMemoryRequest": {
+        "properties": {
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Idempotency Key"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "idempotency_key"
+        ],
+        "title": "ReinforceMemoryRequest"
+      },
       "ReprocessDocumentResponse": {
         "properties": {
           "success": {
@@ -12290,6 +12838,176 @@
             "total_tokens": 600
           }
         }
+      },
+      "RetentionDetails": {
+        "properties": {
+          "memory_id": {
+            "type": "string",
+            "title": "Memory Id"
+          },
+          "importance": {
+            "type": "number",
+            "title": "Importance"
+          },
+          "stability_days": {
+            "type": "number",
+            "title": "Stability Days"
+          },
+          "last_reinforced_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Reinforced At"
+          },
+          "last_recalled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Recalled At"
+          },
+          "reinforcement_count": {
+            "type": "integer",
+            "title": "Reinforcement Count"
+          },
+          "access_count": {
+            "type": "integer",
+            "title": "Access Count"
+          },
+          "retrievability": {
+            "type": "number",
+            "title": "Retrievability"
+          },
+          "lifecycle_score": {
+            "type": "number",
+            "title": "Lifecycle Score"
+          },
+          "lifecycle_state": {
+            "type": "string",
+            "title": "Lifecycle State"
+          },
+          "forgetting_exempt": {
+            "type": "boolean",
+            "title": "Forgetting Exempt"
+          },
+          "exemption_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exemption Reason"
+          },
+          "below_threshold_since": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Below Threshold Since"
+          },
+          "archived_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "archive_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archive Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "memory_id",
+          "importance",
+          "stability_days",
+          "last_reinforced_at",
+          "reinforcement_count",
+          "access_count",
+          "retrievability",
+          "lifecycle_score",
+          "lifecycle_state",
+          "forgetting_exempt"
+        ],
+        "title": "RetentionDetails"
+      },
+      "RetentionPolicyUpdate": {
+        "properties": {
+          "importance": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importance"
+          },
+          "stability_days": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stability Days"
+          },
+          "forgetting_exempt": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forgetting Exempt"
+          },
+          "exemption_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exemption Reason"
+          }
+        },
+        "type": "object",
+        "title": "RetentionPolicyUpdate"
       },
       "RetryOperationResponse": {
         "properties": {

@@ -26,6 +26,13 @@ from hindsight_api.engine.audit import (
     AuditLogListResponse,
     AuditLogStatsResponse,
 )
+from hindsight_api.engine.forgetting.models import (
+    ArchivePreview,
+    ForgettingStats,
+    ReinforceMemoryRequest,
+    RetentionDetails,
+    RetentionPolicyUpdate,
+)
 from hindsight_api.engine.llm_trace import LLMRequestListResponse, LLMRequestStatsResponse
 from hindsight_api.extensions import AuthenticationError, PrecheckOperation
 
@@ -3825,6 +3832,92 @@ def _register_routes(app: FastAPI):
             error_detail = f"{str(e)}\n\nTraceback:\n{traceback.format_exc()}"
             logger.error(f"Error in PATCH /v1/default/banks/{bank_id}/memories/{memory_id}: {error_detail}")
             raise HTTPException(status_code=500, detail=str(e))
+
+    @app.get(
+        "/v1/default/banks/{bank_id}/memories/{memory_id}/retention",
+        response_model=RetentionDetails,
+        tags=["Forgetting"],
+    )
+    async def api_get_memory_retention(
+        bank_id: str, memory_id: str, request_context: RequestContext = Depends(get_request_context)
+    ):
+        result = await app.state.memory.get_memory_retention(bank_id, memory_id, request_context=request_context)
+        if result is None:
+            raise HTTPException(status_code=404, detail="Memory not found")
+        return result
+
+    @app.post(
+        "/v1/default/banks/{bank_id}/memories/{memory_id}/reinforce",
+        response_model=RetentionDetails,
+        tags=["Forgetting"],
+    )
+    @audited("reinforce_memory")
+    async def api_reinforce_memory(
+        bank_id: str,
+        memory_id: str,
+        body: ReinforceMemoryRequest,
+        request_context: RequestContext = Depends(get_request_context),
+    ):
+        result = await app.state.memory.reinforce_memory(
+            bank_id, memory_id, body.idempotency_key, request_context=request_context
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="Memory not found")
+        return result
+
+    @app.patch(
+        "/v1/default/banks/{bank_id}/memories/{memory_id}/retention-policy",
+        response_model=RetentionDetails,
+        tags=["Forgetting"],
+    )
+    @audited("update_retention_policy")
+    async def api_update_retention_policy(
+        bank_id: str,
+        memory_id: str,
+        body: RetentionPolicyUpdate,
+        request_context: RequestContext = Depends(get_request_context),
+    ):
+        try:
+            result = await app.state.memory.update_memory_retention_policy(
+                bank_id, memory_id, body, request_context=request_context
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if result is None:
+            raise HTTPException(status_code=404, detail="Memory not found")
+        return result
+
+    @app.post("/v1/default/banks/{bank_id}/memories/{memory_id}/archive", tags=["Forgetting"])
+    @audited("archive_memory")
+    async def api_archive_memory(
+        bank_id: str, memory_id: str, request_context: RequestContext = Depends(get_request_context)
+    ):
+        if not await app.state.memory.set_memory_archived(
+            bank_id, memory_id, True, "explicit API request", request_context=request_context
+        ):
+            raise HTTPException(status_code=404, detail="Memory not found")
+        return {"success": True}
+
+    @app.post("/v1/default/banks/{bank_id}/memories/{memory_id}/unarchive", tags=["Forgetting"])
+    @audited("unarchive_memory")
+    async def api_unarchive_memory(
+        bank_id: str, memory_id: str, request_context: RequestContext = Depends(get_request_context)
+    ):
+        if not await app.state.memory.set_memory_archived(
+            bank_id, memory_id, False, None, request_context=request_context
+        ):
+            raise HTTPException(status_code=404, detail="Memory not found")
+        return {"success": True}
+
+    @app.get("/v1/default/banks/{bank_id}/forgetting/stats", response_model=ForgettingStats, tags=["Forgetting"])
+    async def api_forgetting_stats(bank_id: str, request_context: RequestContext = Depends(get_request_context)):
+        return await app.state.memory.get_forgetting_stats(bank_id, request_context=request_context)
+
+    @app.post(
+        "/v1/default/banks/{bank_id}/forgetting/archive-preview", response_model=ArchivePreview, tags=["Forgetting"]
+    )
+    async def api_archive_preview(bank_id: str, request_context: RequestContext = Depends(get_request_context)):
+        return await app.state.memory.preview_memory_archive(bank_id, request_context=request_context)
 
     @app.get(
         "/v1/default/banks/{bank_id}/memories/{memory_id}/history",

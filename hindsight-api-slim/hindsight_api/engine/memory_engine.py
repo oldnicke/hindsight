@@ -6294,6 +6294,66 @@ class MemoryEngine(MemoryEngineInterface):
 
         return result
 
+    async def get_memory_retention(self, bank_id: str, memory_id: str, *, request_context: "RequestContext"):
+        await self._authenticate_tenant(request_context)
+        config = await self._config_resolver.resolve_full_config(bank_id, request_context)
+        from .forgetting.service import get_retention_details
+
+        async with acquire_with_retry(await self._get_backend()) as conn:
+            owner = await conn.fetchval(f"SELECT bank_id FROM {fq_table('memory_units')} WHERE id=$1", memory_id)
+            if owner != bank_id:
+                return None
+            return await get_retention_details(conn, memory_id, config)
+
+    async def reinforce_memory(
+        self, bank_id: str, memory_id: str, idempotency_key: str, *, request_context: "RequestContext"
+    ):
+        await self._authenticate_tenant(request_context)
+        config = await self._config_resolver.resolve_full_config(bank_id, request_context)
+        from .forgetting.service import get_retention_details, record_events
+
+        async with acquire_with_retry(await self._get_backend()) as conn:
+            details = await get_retention_details(conn, memory_id, config)
+            if details is None:
+                return None
+            await record_events(conn, bank_id, [memory_id], f"explicit:{idempotency_key}", "explicit", 1.0)
+            return details
+
+    async def update_memory_retention_policy(
+        self, bank_id: str, memory_id: str, policy, *, request_context: "RequestContext"
+    ):
+        await self._authenticate_tenant(request_context)
+        config = await self._config_resolver.resolve_full_config(bank_id, request_context)
+        from .forgetting.service import update_policy
+
+        async with acquire_with_retry(await self._get_backend()) as conn:
+            return await update_policy(conn, memory_id, policy, config)
+
+    async def set_memory_archived(
+        self, bank_id: str, memory_id: str, archived: bool, reason: str | None, *, request_context: "RequestContext"
+    ) -> bool:
+        await self._authenticate_tenant(request_context)
+        from .forgetting.service import set_archived
+
+        async with acquire_with_retry(await self._get_backend()) as conn:
+            owner = await conn.fetchval(f"SELECT bank_id FROM {fq_table('memory_units')} WHERE id=$1", memory_id)
+            return owner == bank_id and await set_archived(conn, memory_id, archived, reason)
+
+    async def get_forgetting_stats(self, bank_id: str, *, request_context: "RequestContext"):
+        await self._authenticate_tenant(request_context)
+        from .forgetting.service import forgetting_stats
+
+        async with acquire_with_retry(await self._get_backend()) as conn:
+            return await forgetting_stats(conn, bank_id)
+
+    async def preview_memory_archive(self, bank_id: str, *, request_context: "RequestContext"):
+        await self._authenticate_tenant(request_context)
+        config = await self._config_resolver.resolve_full_config(bank_id, request_context)
+        from .forgetting.service import archive_preview
+
+        async with acquire_with_retry(await self._get_backend()) as conn:
+            return await archive_preview(conn, bank_id, config)
+
     async def delete_bank(
         self,
         bank_id: str,

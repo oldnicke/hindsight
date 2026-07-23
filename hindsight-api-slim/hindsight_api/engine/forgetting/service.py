@@ -4,7 +4,14 @@ from datetime import datetime, timedelta, timezone
 
 from ..schema import fq_table
 from .curve import compute_forgetting_signal, compute_initial_stability, lifecycle_score, reinforce_stability
-from .models import LifecycleSweepResult, RetentionState
+from .models import (
+    ArchivePreview,
+    ForgettingStats,
+    LifecycleSweepResult,
+    RetentionDetails,
+    RetentionPolicyUpdate,
+    RetentionState,
+)
 
 logger = logging.getLogger(__name__)
 UTC = timezone.utc
@@ -181,3 +188,131 @@ async def lifecycle_sweep(conn, config, *, now: datetime | None = None, dry_run:
         ):
             prune_memory_ids.append(str(row["memory_id"]))
     return LifecycleSweepResult(archived=archived, prune_memory_ids=prune_memory_ids)
+
+
+async def get_retention_details(
+    conn, memory_id: str, config, *, now: datetime | None = None
+) -> RetentionDetails | None:
+    state = (await load_states(conn, [memory_id], config)).get(memory_id)
+    if state is None:
+        return None
+    now = now or datetime.now(UTC)
+    retrievability = compute_forgetting_signal(
+        now=now,
+        last_reinforced_at=state.last_reinforced_at,
+        stability_days=state.stability_days,
+        enabled=True,
+        apply_to_ranking=False,
+        score_floor=0,
+        score_gamma=1,
+        score_alpha=0,
+        exempt=state.forgetting_exempt,
+    ).retrievability
+    row = await conn.fetchrow(
+        f"SELECT last_recalled_at, exemption_reason, archive_reason FROM {fq_table('memory_retention_state')} WHERE memory_id=$1",
+        memory_id,
+    )
+    return RetentionDetails(
+        memory_id=memory_id,
+        importance=state.importance,
+        stability_days=state.stability_days,
+        last_reinforced_at=state.last_reinforced_at,
+        last_recalled_at=row["last_recalled_at"],
+        reinforcement_count=state.reinforcement_count,
+        access_count=state.access_count,
+        retrievability=retrievability,
+        lifecycle_score=lifecycle_score(retrievability, state.importance),
+        lifecycle_state=state.lifecycle_state,
+        forgetting_exempt=state.forgetting_exempt,
+        exemption_reason=row["exemption_reason"],
+        below_threshold_since=state.below_threshold_since,
+        archived_at=state.archived_at,
+        archive_reason=row["archive_reason"],
+    )
+
+
+async def update_policy(conn, memory_id: str, policy: RetentionPolicyUpdate, config) -> RetentionDetails | None:
+    current = await get_retention_details(conn, memory_id, config)
+    if current is None:
+        return None
+    importance = current.importance if policy.importance is None else policy.importance
+    stability = current.stability_days if policy.stability_days is None else policy.stability_days
+    stability = min(config.forgetting_max_stability_days, max(config.forgetting_min_stability_days, stability))
+    exempt = current.forgetting_exempt if policy.forgetting_exempt is None else policy.forgetting_exempt
+    reason = current.exemption_reason if policy.exemption_reason is None else policy.exemption_reason
+    if exempt and not reason:
+        raise ValueError("exemption_reason is required when forgetting_exempt is true")
+    await conn.execute(
+        f"""UPDATE {fq_table("memory_retention_state")} SET importance=$2, stability_days=$3,
+        forgetting_exempt=$4, exemption_reason=$5, updated_at=CURRENT_TIMESTAMP WHERE memory_id=$1""",
+        memory_id,
+        importance,
+        stability,
+        exempt,
+        reason if exempt else None,
+    )
+    return await get_retention_details(conn, memory_id, config)
+
+
+async def set_archived(conn, memory_id: str, archived: bool, reason: str | None = None) -> bool:
+    now = datetime.now(UTC)
+    result = await conn.execute(
+        f"""UPDATE {fq_table("memory_retention_state")} SET lifecycle_state=$2, archived_at=$3,
+        archive_reason=$4, below_threshold_since=NULL,
+        last_reinforced_at=CASE WHEN $2='active' THEN $3 ELSE last_reinforced_at END, updated_at=$3
+        WHERE memory_id=$1""",
+        memory_id,
+        "archived" if archived else "active",
+        now,
+        reason if archived else None,
+    )
+    return result != "UPDATE 0"
+
+
+async def forgetting_stats(conn, bank_id: str) -> ForgettingStats:
+    row = await conn.fetchrow(
+        f"""SELECT COUNT(*) FILTER (WHERE lifecycle_state='active') AS active,
+        COUNT(*) FILTER (WHERE lifecycle_state='archived') AS archived,
+        COUNT(*) FILTER (WHERE forgetting_exempt) AS exempt,
+        COUNT(*) FILTER (WHERE below_threshold_since IS NOT NULL) AS below_threshold
+        FROM {fq_table("memory_retention_state")} WHERE bank_id=$1""",
+        bank_id,
+    )
+    pending = await conn.fetchval(
+        f"SELECT COUNT(*) FROM {fq_table('memory_reinforcement_events')} WHERE bank_id=$1 AND processed_at IS NULL",
+        bank_id,
+    )
+    return ForgettingStats(
+        active=row["active"],
+        archived=row["archived"],
+        exempt=row["exempt"],
+        pending_events=pending,
+        below_threshold=row["below_threshold"],
+    )
+
+
+async def archive_preview(conn, bank_id: str, config, *, now: datetime | None = None) -> ArchivePreview:
+    now = now or datetime.now(UTC)
+    rows = await conn.fetch(
+        f"""SELECT memory_id, importance, stability_days, last_reinforced_at
+        FROM {fq_table("memory_retention_state")} WHERE bank_id=$1 AND lifecycle_state='active'
+        AND forgetting_exempt=FALSE AND importance < $2 ORDER BY last_reinforced_at LIMIT $3""",
+        bank_id,
+        config.forgetting_protected_importance,
+        config.forgetting_archive_batch_size,
+    )
+    eligible: list[str] = []
+    for row in rows:
+        retention = compute_forgetting_signal(
+            now=now,
+            last_reinforced_at=row["last_reinforced_at"],
+            stability_days=row["stability_days"],
+            enabled=True,
+            apply_to_ranking=False,
+            score_floor=0,
+            score_gamma=1,
+            score_alpha=0,
+        ).retrievability
+        if lifecycle_score(retention, row["importance"]) < config.forgetting_archive_threshold:
+            eligible.append(str(row["memory_id"]))
+    return ArchivePreview(eligible_count=len(eligible), sample_memory_ids=eligible[:20])
