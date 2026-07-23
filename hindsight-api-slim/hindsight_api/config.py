@@ -691,6 +691,12 @@ ENV_RECALL_STRATEGY_BOOSTS = "HINDSIGHT_API_RECALL_STRATEGY_BOOSTS"
 ENV_RECENCY_DECAY_FUNCTION = "HINDSIGHT_API_RECENCY_DECAY_FUNCTION"
 ENV_RECENCY_DECAY_LINEAR_WINDOW_DAYS = "HINDSIGHT_API_RECENCY_DECAY_LINEAR_WINDOW_DAYS"
 ENV_RECENCY_DECAY_HALFLIFE_DAYS = "HINDSIGHT_API_RECENCY_DECAY_HALFLIFE_DAYS"
+ENV_FORGETTING_ENABLED = "HINDSIGHT_API_FORGETTING_ENABLED"
+ENV_FORGETTING_MODE = "HINDSIGHT_API_FORGETTING_MODE"
+ENV_FORGETTING_BASE_STABILITY_DAYS = "HINDSIGHT_API_FORGETTING_BASE_STABILITY_DAYS"
+ENV_FORGETTING_SCORE_ALPHA = "HINDSIGHT_API_FORGETTING_SCORE_ALPHA"
+ENV_FORGETTING_SCORE_FLOOR = "HINDSIGHT_API_FORGETTING_SCORE_FLOOR"
+ENV_FORGETTING_SCORE_GAMMA = "HINDSIGHT_API_FORGETTING_SCORE_GAMMA"
 
 # Audit log settings
 # AUDIT_LOG_ENABLED is the deployment-wide default and is overridable per bank
@@ -851,6 +857,13 @@ DEFAULT_RECENCY_DECAY_FUNCTION = "linear"
 DEFAULT_RECENCY_DECAY_LINEAR_WINDOW_DAYS = 365.0
 # Exponential: age (days) at which the recency signal is neutral (0.5).
 DEFAULT_RECENCY_DECAY_HALFLIFE_DAYS = 90.0
+FORGETTING_MODES = ("observe", "rank")
+DEFAULT_FORGETTING_ENABLED = False
+DEFAULT_FORGETTING_MODE = "observe"
+DEFAULT_FORGETTING_BASE_STABILITY_DAYS = 30.0
+DEFAULT_FORGETTING_SCORE_ALPHA = 0.2
+DEFAULT_FORGETTING_SCORE_FLOOR = 0.2
+DEFAULT_FORGETTING_SCORE_GAMMA = 1.0
 # Retrieval arms that can be boosted; mirrors fusion.py source_names.
 RECALL_STRATEGY_NAMES = ("semantic", "bm25", "graph", "temporal")
 # User-facing priority levels. Kept in sync with recall_boost.BOOST_LEVELS by a
@@ -1426,6 +1439,13 @@ def _validate_recency_decay_function(function: str) -> str:
     return function_lower
 
 
+def _validate_forgetting_mode(mode: str) -> str:
+    mode_lower = mode.lower()
+    if mode_lower not in FORGETTING_MODES:
+        raise ValueError(f"Invalid {ENV_FORGETTING_MODE}: {mode!r}; expected one of {FORGETTING_MODES}")
+    return mode_lower
+
+
 def _parse_bank_priority(raw: str) -> dict[str, int]:
     """Parse ``bank-pattern:priority,...`` into ``{pattern: priority}``.
 
@@ -1836,6 +1856,12 @@ class HindsightConfig:
     recency_decay_function: str
     recency_decay_linear_window_days: float
     recency_decay_halflife_days: float
+    forgetting_enabled: bool
+    forgetting_mode: str
+    forgetting_base_stability_days: float
+    forgetting_score_alpha: float
+    forgetting_score_floor: float
+    forgetting_score_gamma: float
     reranker_cohere_api_key: str | None
     reranker_cohere_model: str
     reranker_cohere_base_url: str | None
@@ -2414,6 +2440,14 @@ class HindsightConfig:
             raise ValueError(
                 f"{ENV_OPERATION_CLEANUP_BATCH_SIZE} must be >= 1, got {self.operation_cleanup_batch_size}"
             )
+        if self.forgetting_base_stability_days <= 0:
+            raise ValueError(f"{ENV_FORGETTING_BASE_STABILITY_DAYS} must be > 0")
+        if not 0 <= self.forgetting_score_floor <= 1:
+            raise ValueError(f"{ENV_FORGETTING_SCORE_FLOOR} must be between 0 and 1")
+        if self.forgetting_score_alpha < 0:
+            raise ValueError(f"{ENV_FORGETTING_SCORE_ALPHA} must be >= 0")
+        if self.forgetting_score_gamma <= 0:
+            raise ValueError(f"{ENV_FORGETTING_SCORE_GAMMA} must be > 0")
 
     @classmethod
     def from_env(cls) -> "HindsightConfig":
@@ -2792,6 +2826,15 @@ class HindsightConfig:
             recency_decay_halflife_days=float(
                 os.getenv(ENV_RECENCY_DECAY_HALFLIFE_DAYS, str(DEFAULT_RECENCY_DECAY_HALFLIFE_DAYS))
             ),
+            forgetting_enabled=os.getenv(ENV_FORGETTING_ENABLED, str(DEFAULT_FORGETTING_ENABLED)).lower()
+            in ("true", "1"),
+            forgetting_mode=_validate_forgetting_mode(os.getenv(ENV_FORGETTING_MODE, DEFAULT_FORGETTING_MODE)),
+            forgetting_base_stability_days=float(
+                os.getenv(ENV_FORGETTING_BASE_STABILITY_DAYS, str(DEFAULT_FORGETTING_BASE_STABILITY_DAYS))
+            ),
+            forgetting_score_alpha=float(os.getenv(ENV_FORGETTING_SCORE_ALPHA, str(DEFAULT_FORGETTING_SCORE_ALPHA))),
+            forgetting_score_floor=float(os.getenv(ENV_FORGETTING_SCORE_FLOOR, str(DEFAULT_FORGETTING_SCORE_FLOOR))),
+            forgetting_score_gamma=float(os.getenv(ENV_FORGETTING_SCORE_GAMMA, str(DEFAULT_FORGETTING_SCORE_GAMMA))),
             # Cohere reranker (with backward-compatible fallback to shared API key)
             reranker_cohere_api_key=os.getenv(ENV_RERANKER_COHERE_API_KEY) or os.getenv(ENV_COHERE_API_KEY),
             reranker_cohere_model=os.getenv(ENV_RERANKER_COHERE_MODEL, DEFAULT_RERANKER_COHERE_MODEL),

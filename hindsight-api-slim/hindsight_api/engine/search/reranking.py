@@ -5,6 +5,7 @@ Cross-encoder neural reranking for search results.
 import math
 from datetime import datetime, timezone
 
+from ..forgetting import compute_forgetting_signal
 from .types import MergedCandidate, ScoredResult
 
 UTC = timezone.utc
@@ -65,6 +66,12 @@ def apply_combined_scoring(
     recency_decay_function: str = _RECENCY_DECAY_FUNCTION,
     recency_decay_linear_window_days: float = _RECENCY_DECAY_LINEAR_WINDOW_DAYS,
     recency_decay_halflife_days: float = _RECENCY_DECAY_HALFLIFE_DAYS,
+    forgetting_enabled: bool = False,
+    forgetting_apply_to_ranking: bool = False,
+    forgetting_base_stability_days: float = 30.0,
+    forgetting_score_floor: float = 0.2,
+    forgetting_score_gamma: float = 1.0,
+    forgetting_score_alpha: float = 0.2,
 ) -> None:
     """Apply combined scoring to a list of ScoredResults in-place.
 
@@ -188,7 +195,25 @@ def apply_combined_scoring(
         recency_boost = 1.0 + recency_alpha * (sr.recency - 0.5)
         temporal_boost = 1.0 + temporal_alpha * (sr.temporal - 0.5)
         proof_count_boost = 1.0 + proof_count_alpha * (proof_norm - 0.5)
-        sr.combined_score = sr.cross_encoder_score_normalized * recency_boost * temporal_boost * proof_count_boost
+        forgetting = compute_forgetting_signal(
+            now=now,
+            # Until persistent reinforcement state is introduced, created_at is
+            # the only honest learning-time anchor. Event occurrence time remains
+            # exclusively owned by the separate recency signal above.
+            last_reinforced_at=sr.retrieval.created_at,
+            stability_days=forgetting_base_stability_days,
+            enabled=forgetting_enabled,
+            apply_to_ranking=forgetting_apply_to_ranking,
+            score_floor=forgetting_score_floor,
+            score_gamma=forgetting_score_gamma,
+            score_alpha=forgetting_score_alpha,
+        )
+        sr.retrievability = forgetting.retrievability
+        sr.forgetting_signal = forgetting.signal
+        sr.forgetting_boost = forgetting.boost
+        sr.combined_score = (
+            sr.cross_encoder_score_normalized * recency_boost * temporal_boost * proof_count_boost * forgetting.boost
+        )
         sr.weight = sr.combined_score
 
 

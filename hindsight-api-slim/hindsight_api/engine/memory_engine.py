@@ -5039,6 +5039,12 @@ class MemoryEngine(MemoryEngineInterface):
                     recency_decay_function=scoring_config.recency_decay_function,
                     recency_decay_linear_window_days=scoring_config.recency_decay_linear_window_days,
                     recency_decay_halflife_days=scoring_config.recency_decay_halflife_days,
+                    forgetting_enabled=scoring_config.forgetting_enabled,
+                    forgetting_apply_to_ranking=scoring_config.forgetting_mode == "rank",
+                    forgetting_base_stability_days=scoring_config.forgetting_base_stability_days,
+                    forgetting_score_alpha=scoring_config.forgetting_score_alpha,
+                    forgetting_score_floor=scoring_config.forgetting_score_floor,
+                    forgetting_score_gamma=scoring_config.forgetting_score_gamma,
                 )
                 # Per-strategy additive boost: nudge candidates surfaced by a
                 # prioritised retrieval arm up the final ordering.
@@ -5049,7 +5055,14 @@ class MemoryEngine(MemoryEngineInterface):
                     for sr in scored_results:
                         sr.weight += additive_strategy_boost(sr.candidate.source_ranks, strategy_boosts)
                 scored_results.sort(key=lambda x: x.weight, reverse=True)
-                log_buffer.append("  [4.6] Combined scoring: ce * recency_boost(0.2) * temporal_boost(0.2)")
+                forgetting_note = (
+                    f" * forgetting_boost({scoring_config.forgetting_score_alpha})"
+                    if scoring_config.forgetting_enabled and scoring_config.forgetting_mode == "rank"
+                    else ""
+                )
+                log_buffer.append(
+                    "  [4.6] Combined scoring: ce * recency_boost(0.2) * temporal_boost(0.2)" + forgetting_note
+                )
                 if strategy_boosts:
                     log_buffer.append(f"  [4.7] Strategy boosts applied: {strategy_boosts}")
 

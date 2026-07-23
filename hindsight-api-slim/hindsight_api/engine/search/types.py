@@ -44,6 +44,7 @@ class RetrievalResult:
     occurred_start: datetime | None = None
     occurred_end: datetime | None = None
     mentioned_at: datetime | None = None
+    created_at: datetime | None = None
     document_id: str | None = None
     chunk_id: str | None = None
     tags: list[str] | None = None  # Visibility scope tags
@@ -69,6 +70,7 @@ class RetrievalResult:
             occurred_start=row.get("occurred_start"),
             occurred_end=row.get("occurred_end"),
             mentioned_at=row.get("mentioned_at"),
+            created_at=row.get("created_at"),
             document_id=row.get("document_id"),
             chunk_id=row.get("chunk_id"),
             tags=row.get("tags"),
@@ -139,6 +141,9 @@ class ScoredResult:
     recency: float = 0.5
     temporal: float = 0.5
     proof_norm: float = 0.5  # log-normalized proof count (neutral 0.5); drives proof_count_boost
+    retrievability: float = 1.0
+    forgetting_signal: float = 1.0
+    forgetting_boost: float = 1.0
 
     # Final combined score
     combined_score: float = 0.0
@@ -196,6 +201,9 @@ class ScoredResult:
         result["temporal"] = self.temporal
         result["recency"] = self.recency
         result["proof_norm"] = self.proof_norm
+        result["retrievability"] = self.retrievability
+        result["forgetting_signal"] = self.forgetting_signal
+        result["forgetting_boost"] = self.forgetting_boost
         result["combined_score"] = self.combined_score
         result["weight"] = self.weight
         result["activation"] = self.weight  # Legacy field

@@ -29,6 +29,12 @@ def setup_test_env():
         "HINDSIGHT_API_SEMANTIC_MIN_SIMILARITY",
         "HINDSIGHT_API_DATABASE_URL",
         "HINDSIGHT_API_MIGRATION_DATABASE_URL",
+        "HINDSIGHT_API_FORGETTING_ENABLED",
+        "HINDSIGHT_API_FORGETTING_MODE",
+        "HINDSIGHT_API_FORGETTING_BASE_STABILITY_DAYS",
+        "HINDSIGHT_API_FORGETTING_SCORE_ALPHA",
+        "HINDSIGHT_API_FORGETTING_SCORE_FLOOR",
+        "HINDSIGHT_API_FORGETTING_SCORE_GAMMA",
     ]
 
     # Save original values
@@ -37,7 +43,6 @@ def setup_test_env():
         original_values[key] = os.environ.get(key)
 
     clear_config_cache()
-
     yield
 
     # Restore original environment
@@ -48,6 +53,58 @@ def setup_test_env():
             os.environ[key] = original_value
 
     clear_config_cache()
+
+
+def test_forgetting_defaults_to_disabled_observe_mode():
+    from hindsight_api.config import HindsightConfig
+
+    config = HindsightConfig.from_env()
+
+    assert config.forgetting_enabled is False
+    assert config.forgetting_mode == "observe"
+    assert config.forgetting_base_stability_days == 30.0
+    assert config.forgetting_score_alpha == 0.2
+    assert config.forgetting_score_floor == 0.2
+    assert config.forgetting_score_gamma == 1.0
+
+
+def test_forgetting_settings_load_from_env():
+    from hindsight_api.config import HindsightConfig
+
+    os.environ["HINDSIGHT_API_FORGETTING_ENABLED"] = "true"
+    os.environ["HINDSIGHT_API_FORGETTING_MODE"] = "RANK"
+    os.environ["HINDSIGHT_API_FORGETTING_BASE_STABILITY_DAYS"] = "14"
+    os.environ["HINDSIGHT_API_FORGETTING_SCORE_ALPHA"] = "0.3"
+    os.environ["HINDSIGHT_API_FORGETTING_SCORE_FLOOR"] = "0.1"
+    os.environ["HINDSIGHT_API_FORGETTING_SCORE_GAMMA"] = "2"
+
+    config = HindsightConfig.from_env()
+
+    assert config.forgetting_enabled is True
+    assert config.forgetting_mode == "rank"
+    assert config.forgetting_base_stability_days == 14.0
+    assert config.forgetting_score_alpha == 0.3
+    assert config.forgetting_score_floor == 0.1
+    assert config.forgetting_score_gamma == 2.0
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("HINDSIGHT_API_FORGETTING_MODE", "archive"),
+        ("HINDSIGHT_API_FORGETTING_BASE_STABILITY_DAYS", "0"),
+        ("HINDSIGHT_API_FORGETTING_SCORE_ALPHA", "-0.1"),
+        ("HINDSIGHT_API_FORGETTING_SCORE_FLOOR", "1.1"),
+        ("HINDSIGHT_API_FORGETTING_SCORE_GAMMA", "0"),
+    ],
+)
+def test_forgetting_rejects_invalid_settings(name: str, value: str):
+    from hindsight_api.config import HindsightConfig
+
+    os.environ[name] = value
+
+    with pytest.raises(ValueError):
+        HindsightConfig.from_env()
 
 
 def test_retain_max_completion_tokens_must_be_greater_than_chunk_size():
