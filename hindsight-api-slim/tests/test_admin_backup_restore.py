@@ -173,11 +173,12 @@ async def test_backup_restore_roundtrip(backup_test_schema):
         assert backup_path.stat().st_size > 0
 
         # Verify manifest
-        assert manifest["version"] == "1"
+        assert manifest["version"] == "2"
         assert "created_at" in manifest
         for table in BACKUP_TABLES:
             assert table in manifest["tables"]
             assert manifest["tables"][table]["rows"] == counts_before[table]
+            assert manifest["tables"][table]["columns"]
 
         # Verify zip contents
         with zipfile.ZipFile(backup_path, "r") as zf:
@@ -351,6 +352,43 @@ async def test_backup_restore_preserves_all_column_types(backup_test_schema):
         assert restored_bank["bank_id"] == original_bank["bank_id"], "Bank ID should match"
         assert restored_bank["created_at"] == original_bank["created_at"], "Bank created_at should match"
 
+    finally:
+        if backup_path.exists():
+            backup_path.unlink()
+
+
+@pytest.mark.asyncio
+async def test_restore_rejects_legacy_extra_column_before_truncating(backup_test_schema):
+    """Schema drift must fail preflight without deleting existing target data."""
+    db_url, schema_name, _fq, _embeddings = backup_test_schema
+    conn = await asyncpg.connect(db_url)
+    try:
+        await conn.execute(f"ALTER TABLE {_fq('documents')} ADD COLUMN legacy_metadata JSONB")
+        await conn.execute(f"INSERT INTO {_fq('banks')} (bank_id) VALUES ('source-bank')")
+    finally:
+        await conn.close()
+
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f:
+        backup_path = Path(f.name)
+
+    try:
+        await _backup(db_url, backup_path, schema=schema_name)
+        conn = await asyncpg.connect(db_url)
+        try:
+            await conn.execute(f"ALTER TABLE {_fq('documents')} DROP COLUMN legacy_metadata")
+            await conn.execute(f"INSERT INTO {_fq('banks')} (bank_id) VALUES ('target-bank')")
+        finally:
+            await conn.close()
+
+        with pytest.raises(ValueError, match=r"documents: target is missing backup columns legacy_metadata"):
+            await _restore(db_url, backup_path, schema=schema_name)
+
+        conn = await asyncpg.connect(db_url)
+        try:
+            banks = await conn.fetch(f"SELECT bank_id FROM {_fq('banks')} ORDER BY bank_id")
+        finally:
+            await conn.close()
+        assert [row["bank_id"] for row in banks] == ["source-bank", "target-bank"]
     finally:
         if backup_path.exists():
             backup_path.unlink()
