@@ -5019,6 +5019,7 @@ class MemoryEngine(MemoryEngineInterface):
             # math, additive boosts and final sort would otherwise be invisible in
             # the phase metrics (issue #2361).
             scoring_start = time.time()
+            scoring_config = get_config()
             if scored_results and reranking == "interleave":
                 # Interleave order is authoritative for dedup recall: do NOT re-sort by the
                 # recency/temporal boosts — that re-sort is precisely what buried the twin
@@ -5031,7 +5032,21 @@ class MemoryEngine(MemoryEngineInterface):
                 ce = reranker_instance.cross_encoder
                 # "rrf" mode is passthrough by construction; so is a configured "rrf" CE.
                 is_passthrough = (reranking == "rrf") or (ce is not None and ce.provider_name == "rrf")
-                scoring_config = get_config()
+                if scoring_config.forgetting_enabled:
+                    from .forgetting.service import load_states
+
+                    async with acquire_with_retry(await self._get_backend()) as retention_conn:
+                        retention_states = await load_states(
+                            retention_conn, [sr.id for sr in scored_results], scoring_config
+                        )
+                    for sr in scored_results:
+                        state = retention_states.get(sr.id)
+                        if state is not None:
+                            sr.retrieval.retention_stability_days = state.stability_days
+                            sr.retrieval.retention_last_reinforced_at = state.last_reinforced_at
+                            sr.retrieval.retention_importance = state.importance
+                            sr.retrieval.retention_exempt = state.forgetting_exempt
+                            sr.retrieval.retention_lifecycle_state = state.lifecycle_state
                 apply_combined_scoring(
                     scored_results,
                     now=_recall_scoring_now(question_date),
@@ -5040,7 +5055,7 @@ class MemoryEngine(MemoryEngineInterface):
                     recency_decay_linear_window_days=scoring_config.recency_decay_linear_window_days,
                     recency_decay_halflife_days=scoring_config.recency_decay_halflife_days,
                     forgetting_enabled=scoring_config.forgetting_enabled,
-                    forgetting_apply_to_ranking=scoring_config.forgetting_mode == "rank",
+                    forgetting_apply_to_ranking=scoring_config.forgetting_mode in ("rank", "filter", "lifecycle"),
                     forgetting_base_stability_days=scoring_config.forgetting_base_stability_days,
                     forgetting_score_alpha=scoring_config.forgetting_score_alpha,
                     forgetting_score_floor=scoring_config.forgetting_score_floor,
@@ -5055,6 +5070,18 @@ class MemoryEngine(MemoryEngineInterface):
                     for sr in scored_results:
                         sr.weight += additive_strategy_boost(sr.candidate.source_ranks, strategy_boosts)
                 scored_results.sort(key=lambda x: x.weight, reverse=True)
+                if scoring_config.forgetting_mode in ("filter", "lifecycle"):
+                    scored_results = [
+                        sr
+                        for sr in scored_results
+                        if sr.retrieval.retention_lifecycle_state == "active"
+                        and (
+                            sr.retrievability >= scoring_config.forgetting_archive_threshold
+                            or (sr.retrieval.retention_importance or 0.5)
+                            >= scoring_config.forgetting_protected_importance
+                            or sr.retrieval.retention_exempt
+                        )
+                    ]
                 forgetting_note = (
                     f" * forgetting_boost({scoring_config.forgetting_score_alpha})"
                     if scoring_config.forgetting_enabled and scoring_config.forgetting_mode == "rank"
@@ -5627,13 +5654,34 @@ class MemoryEngine(MemoryEngineInterface):
             if not quiet:
                 logger.info("\n" + "\n".join(log_buffer))
 
-            return RecallResultModel(
+            result_model = RecallResultModel(
                 results=memory_facts,
                 trace=trace_dict,
                 entities=entities_dict,
                 chunks=chunks_dict,
                 source_facts=source_facts_dict,
             )
+            if (
+                scoring_config.forgetting_enabled
+                and scoring_config.forgetting_mode != "observe"
+                and scoring_config.forgetting_reinforcement_enabled
+                and memory_facts
+            ):
+                try:
+                    from .forgetting.service import record_events
+
+                    async with acquire_with_retry(await self._get_backend()) as reinforcement_conn:
+                        await record_events(
+                            reinforcement_conn,
+                            bank_id,
+                            [fact.id for fact in memory_facts],
+                            f"recall:{recall_id}",
+                            "recall_returned",
+                            0.4,
+                        )
+                except Exception:
+                    logger.warning("Recall succeeded but reinforcement events were not recorded", exc_info=True)
+            return result_model
 
         except OperationCancelledError:
             # Client disconnected mid-recall — propagate the cancellation so the
@@ -9648,6 +9696,26 @@ class MemoryEngine(MemoryEngineInterface):
                 llm_trace=llm_trace_result,
                 directives_applied=directives_applied_result,
             )
+            if (
+                resolved_reflect_config.forgetting_enabled
+                and resolved_reflect_config.forgetting_mode != "observe"
+                and resolved_reflect_config.forgetting_reinforcement_enabled
+                and seen_memory_ids
+            ):
+                try:
+                    from .forgetting.service import record_events
+
+                    async with acquire_with_retry(await self._get_backend()) as reinforcement_conn:
+                        await record_events(
+                            reinforcement_conn,
+                            bank_id,
+                            list(seen_memory_ids),
+                            f"reflect:{reflect_id}",
+                            "reflect_used",
+                            0.8,
+                        )
+                except Exception:
+                    logger.warning("Reflect succeeded but reinforcement events were not recorded", exc_info=True)
 
             # Call post-operation hook if validator is configured
             if self._operation_validator:

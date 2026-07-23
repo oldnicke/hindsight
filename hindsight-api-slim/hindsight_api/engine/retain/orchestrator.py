@@ -452,6 +452,15 @@ async def _insert_facts_and_links(
     """
     set_stage("retain.phase2.insert_facts")
     unit_ids = await fact_storage.insert_facts_batch(conn, bank_id, processed_facts, ops=ops)
+    if unit_ids and config.forgetting_enabled:
+        from ..forgetting.service import initialize_states
+
+        await initialize_states(conn, bank_id, unit_ids, [fact.fact_type for fact in processed_facts], config)
+    if unit_ids and config.forgetting_enabled:
+        from ..forgetting.service import initialize_states
+
+        flat_ids = [unit_id for batch in unit_ids for unit_id in batch]
+        await initialize_states(conn, bank_id, flat_ids, [fact.fact_type for fact in processed_facts], config)
     step_start = time.time()
     log_buffer.append(f"  Insert facts: {len(unit_ids)} units in {time.time() - step_start:.3f}s")
 

@@ -109,7 +109,10 @@ class MaintenanceLoop:
         llm_on = cfg.llm_trace_enabled and cfg.llm_trace_retention_days > 0
         mm_refresh_on = cfg.mental_model_refresh_tick_seconds > 0
         op_cleanup_on = cfg.operation_retention_days > 0
-        return reconcile_on or audit_on or llm_on or mm_refresh_on or op_cleanup_on
+        forgetting_on = cfg.forgetting_enabled and (
+            cfg.forgetting_reinforcement_enabled or cfg.forgetting_archive_enabled
+        )
+        return reconcile_on or audit_on or llm_on or mm_refresh_on or op_cleanup_on or forgetting_on
 
     # ── loop ───────────────────────────────────────────────────────────────
 
@@ -145,6 +148,28 @@ class MaintenanceLoop:
             await self._run_timed("scheduled mental model refresh", self._run_scheduled_mm_refresh())
         if cfg.operation_retention_days > 0 and self._is_due("operation_cleanup", _OPERATION_CLEANUP_INTERVAL_SECONDS):
             await self._run_timed("operation cleanup", self._run_operation_cleanup(cfg))
+        if cfg.forgetting_enabled and self._is_due("forgetting", _RETENTION_INTERVAL_SECONDS):
+            await self._run_timed("forgetting", self._run_forgetting(cfg))
+
+    async def _run_forgetting(self, cfg: HindsightConfig) -> None:
+        from .forgetting.service import lifecycle_sweep, process_events
+
+        backend = self._engine._backend
+        async with acquire_with_retry(backend, max_retries=1) as conn:
+            async with conn.transaction():
+                processed = await process_events(conn, cfg) if cfg.forgetting_reinforcement_enabled else 0
+                lifecycle = await lifecycle_sweep(conn, cfg) if cfg.forgetting_mode == "lifecycle" else None
+        # Physical deletion must use the engine domain path so observation and
+        # graph invariants are maintained; lifecycle selection itself stays in
+        # the short maintenance transaction above.
+        pruned = 0
+        for memory_id in lifecycle.prune_memory_ids if lifecycle is not None else []:
+            result = await self._engine.delete_memory_unit(memory_id, request_context=RequestContext())
+            pruned += int(bool(result["success"]))
+        logger.info(
+            f"Maintenance: forgetting processed={processed} "
+            f"archived={lifecycle.archived if lifecycle is not None else 0} pruned={pruned}"
+        )
 
     async def _run_timed(self, name: str, coro: Coroutine[Any, Any, None]) -> None:
         """Run a maintenance job and emit one timing line for it.

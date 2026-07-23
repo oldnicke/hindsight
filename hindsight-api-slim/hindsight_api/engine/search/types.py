@@ -45,6 +45,11 @@ class RetrievalResult:
     occurred_end: datetime | None = None
     mentioned_at: datetime | None = None
     created_at: datetime | None = None
+    retention_stability_days: float | None = None
+    retention_last_reinforced_at: datetime | None = None
+    retention_importance: float | None = None
+    retention_exempt: bool = False
+    retention_lifecycle_state: str = "active"
     document_id: str | None = None
     chunk_id: str | None = None
     tags: list[str] | None = None  # Visibility scope tags

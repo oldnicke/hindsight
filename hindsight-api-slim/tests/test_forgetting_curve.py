@@ -3,7 +3,12 @@
 from datetime import datetime, timedelta, timezone
 from math import exp
 
-from hindsight_api.engine.forgetting import compute_forgetting_signal
+from hindsight_api.engine.forgetting import (
+    compute_forgetting_signal,
+    compute_initial_stability,
+    lifecycle_score,
+    reinforce_stability,
+)
 from hindsight_api.engine.search.reranking import apply_combined_scoring
 from hindsight_api.engine.search.types import MergedCandidate, RetrievalResult, ScoredResult
 
@@ -97,3 +102,39 @@ def test_future_learning_timestamp_clamps_to_full_retrievability() -> None:
     )
 
     assert result.retrievability == 1.0
+
+
+def test_initial_stability_uses_type_importance_and_evidence() -> None:
+    world = compute_initial_stability(
+        base_days=30, importance=0.7, proof_count=2, fact_type="world", min_days=1, max_days=3650
+    )
+    experience = compute_initial_stability(
+        base_days=30, importance=0.5, proof_count=0, fact_type="experience", min_days=1, max_days=3650
+    )
+    assert world > experience
+
+
+def test_reinforcement_has_spacing_and_diminishing_returns() -> None:
+    first = reinforce_stability(
+        now=NOW,
+        last_reinforced_at=NOW - timedelta(days=30),
+        stability_days=30,
+        reinforcement_count=0,
+        source_weight=0.8,
+        gain=0.5,
+        max_days=3650,
+    )
+    repeated = reinforce_stability(
+        now=NOW,
+        last_reinforced_at=NOW - timedelta(days=30),
+        stability_days=30,
+        reinforcement_count=9,
+        source_weight=0.8,
+        gain=0.5,
+        max_days=3650,
+    )
+    assert first.stability_days > repeated.stability_days > 30
+
+
+def test_lifecycle_score_protects_important_memories() -> None:
+    assert lifecycle_score(0.1, 1.0) > lifecycle_score(0.1, 0.0)

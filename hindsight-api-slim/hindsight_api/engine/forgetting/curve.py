@@ -7,7 +7,7 @@ still be stale between sweeps.
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from math import exp
+from math import exp, log1p
 
 UTC = timezone.utc
 
@@ -19,6 +19,54 @@ class ForgettingSignal:
     retrievability: float
     signal: float
     boost: float
+
+
+@dataclass(frozen=True)
+class ReinforcementResult:
+    stability_days: float
+    retrievability_before: float
+
+
+def compute_initial_stability(
+    *, base_days: float, importance: float, proof_count: int, fact_type: str, min_days: float, max_days: float
+) -> float:
+    type_factor = {"world": 1.5, "experience": 1.0, "observation": 2.0}.get(fact_type, 1.0)
+    importance_factor = 0.5 + min(1.0, max(0.0, importance))
+    evidence_factor = 1.0 + min(log1p(max(0, proof_count)) / 4.0, 1.0)
+    return min(max_days, max(min_days, base_days * type_factor * importance_factor * evidence_factor))
+
+
+def reinforce_stability(
+    *,
+    now: datetime,
+    last_reinforced_at: datetime,
+    stability_days: float,
+    reinforcement_count: int,
+    source_weight: float,
+    gain: float,
+    max_days: float,
+    minimum_spacing_quality: float = 0.05,
+) -> ReinforcementResult:
+    signal = compute_forgetting_signal(
+        now=now,
+        last_reinforced_at=last_reinforced_at,
+        stability_days=stability_days,
+        enabled=True,
+        apply_to_ranking=False,
+        score_floor=0.0,
+        score_gamma=1.0,
+        score_alpha=0.0,
+    )
+    spacing_quality = min(1.0, max(minimum_spacing_quality, 1.0 - signal.retrievability))
+    effective_gain = gain * min(1.0, max(0.0, source_weight)) * spacing_quality / (1 + reinforcement_count) ** 0.5
+    return ReinforcementResult(
+        stability_days=min(max_days, max(stability_days, stability_days * (1.0 + effective_gain))),
+        retrievability_before=signal.retrievability,
+    )
+
+
+def lifecycle_score(retrievability: float, importance: float) -> float:
+    return min(1.0, max(0.0, retrievability)) * (0.5 + 0.5 * min(1.0, max(0.0, importance)))
 
 
 def compute_forgetting_signal(

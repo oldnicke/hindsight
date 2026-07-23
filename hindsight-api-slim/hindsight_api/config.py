@@ -697,6 +697,19 @@ ENV_FORGETTING_BASE_STABILITY_DAYS = "HINDSIGHT_API_FORGETTING_BASE_STABILITY_DA
 ENV_FORGETTING_SCORE_ALPHA = "HINDSIGHT_API_FORGETTING_SCORE_ALPHA"
 ENV_FORGETTING_SCORE_FLOOR = "HINDSIGHT_API_FORGETTING_SCORE_FLOOR"
 ENV_FORGETTING_SCORE_GAMMA = "HINDSIGHT_API_FORGETTING_SCORE_GAMMA"
+ENV_FORGETTING_MIN_STABILITY_DAYS = "HINDSIGHT_API_FORGETTING_MIN_STABILITY_DAYS"
+ENV_FORGETTING_MAX_STABILITY_DAYS = "HINDSIGHT_API_FORGETTING_MAX_STABILITY_DAYS"
+ENV_FORGETTING_REINFORCEMENT_ENABLED = "HINDSIGHT_API_FORGETTING_REINFORCEMENT_ENABLED"
+ENV_FORGETTING_REINFORCEMENT_GAIN = "HINDSIGHT_API_FORGETTING_REINFORCEMENT_GAIN"
+ENV_FORGETTING_REINFORCEMENT_COOLDOWN_HOURS = "HINDSIGHT_API_FORGETTING_REINFORCEMENT_COOLDOWN_HOURS"
+ENV_FORGETTING_EVENT_BATCH_SIZE = "HINDSIGHT_API_FORGETTING_EVENT_BATCH_SIZE"
+ENV_FORGETTING_ARCHIVE_ENABLED = "HINDSIGHT_API_FORGETTING_ARCHIVE_ENABLED"
+ENV_FORGETTING_ARCHIVE_THRESHOLD = "HINDSIGHT_API_FORGETTING_ARCHIVE_THRESHOLD"
+ENV_FORGETTING_ARCHIVE_GRACE_DAYS = "HINDSIGHT_API_FORGETTING_ARCHIVE_GRACE_DAYS"
+ENV_FORGETTING_PROTECTED_IMPORTANCE = "HINDSIGHT_API_FORGETTING_PROTECTED_IMPORTANCE"
+ENV_FORGETTING_ARCHIVE_BATCH_SIZE = "HINDSIGHT_API_FORGETTING_ARCHIVE_BATCH_SIZE"
+ENV_FORGETTING_AUTO_PRUNE_ENABLED = "HINDSIGHT_API_FORGETTING_AUTO_PRUNE_ENABLED"
+ENV_FORGETTING_PRUNE_AFTER_DAYS = "HINDSIGHT_API_FORGETTING_PRUNE_AFTER_DAYS"
 
 # Audit log settings
 # AUDIT_LOG_ENABLED is the deployment-wide default and is overridable per bank
@@ -857,13 +870,26 @@ DEFAULT_RECENCY_DECAY_FUNCTION = "linear"
 DEFAULT_RECENCY_DECAY_LINEAR_WINDOW_DAYS = 365.0
 # Exponential: age (days) at which the recency signal is neutral (0.5).
 DEFAULT_RECENCY_DECAY_HALFLIFE_DAYS = 90.0
-FORGETTING_MODES = ("observe", "rank")
+FORGETTING_MODES = ("observe", "rank", "filter", "lifecycle")
 DEFAULT_FORGETTING_ENABLED = False
 DEFAULT_FORGETTING_MODE = "observe"
 DEFAULT_FORGETTING_BASE_STABILITY_DAYS = 30.0
 DEFAULT_FORGETTING_SCORE_ALPHA = 0.2
 DEFAULT_FORGETTING_SCORE_FLOOR = 0.2
 DEFAULT_FORGETTING_SCORE_GAMMA = 1.0
+DEFAULT_FORGETTING_MIN_STABILITY_DAYS = 1.0
+DEFAULT_FORGETTING_MAX_STABILITY_DAYS = 3650.0
+DEFAULT_FORGETTING_REINFORCEMENT_ENABLED = True
+DEFAULT_FORGETTING_REINFORCEMENT_GAIN = 0.5
+DEFAULT_FORGETTING_REINFORCEMENT_COOLDOWN_HOURS = 6.0
+DEFAULT_FORGETTING_EVENT_BATCH_SIZE = 500
+DEFAULT_FORGETTING_ARCHIVE_ENABLED = False
+DEFAULT_FORGETTING_ARCHIVE_THRESHOLD = 0.05
+DEFAULT_FORGETTING_ARCHIVE_GRACE_DAYS = 30
+DEFAULT_FORGETTING_PROTECTED_IMPORTANCE = 0.9
+DEFAULT_FORGETTING_ARCHIVE_BATCH_SIZE = 1000
+DEFAULT_FORGETTING_AUTO_PRUNE_ENABLED = False
+DEFAULT_FORGETTING_PRUNE_AFTER_DAYS = 365
 # Retrieval arms that can be boosted; mirrors fusion.py source_names.
 RECALL_STRATEGY_NAMES = ("semantic", "bm25", "graph", "temporal")
 # User-facing priority levels. Kept in sync with recall_boost.BOOST_LEVELS by a
@@ -1862,6 +1888,19 @@ class HindsightConfig:
     forgetting_score_alpha: float
     forgetting_score_floor: float
     forgetting_score_gamma: float
+    forgetting_min_stability_days: float
+    forgetting_max_stability_days: float
+    forgetting_reinforcement_enabled: bool
+    forgetting_reinforcement_gain: float
+    forgetting_reinforcement_cooldown_hours: float
+    forgetting_event_batch_size: int
+    forgetting_archive_enabled: bool
+    forgetting_archive_threshold: float
+    forgetting_archive_grace_days: int
+    forgetting_protected_importance: float
+    forgetting_archive_batch_size: int
+    forgetting_auto_prune_enabled: bool
+    forgetting_prune_after_days: int
     reranker_cohere_api_key: str | None
     reranker_cohere_model: str
     reranker_cohere_base_url: str | None
@@ -2448,6 +2487,19 @@ class HindsightConfig:
             raise ValueError(f"{ENV_FORGETTING_SCORE_ALPHA} must be >= 0")
         if self.forgetting_score_gamma <= 0:
             raise ValueError(f"{ENV_FORGETTING_SCORE_GAMMA} must be > 0")
+        if (
+            self.forgetting_min_stability_days <= 0
+            or self.forgetting_max_stability_days < self.forgetting_min_stability_days
+        ):
+            raise ValueError("Forgetting stability bounds are invalid")
+        if self.forgetting_reinforcement_gain < 0 or self.forgetting_reinforcement_cooldown_hours < 0:
+            raise ValueError("Forgetting reinforcement settings must be non-negative")
+        if self.forgetting_event_batch_size < 1 or self.forgetting_archive_batch_size < 1:
+            raise ValueError("Forgetting batch sizes must be positive")
+        if not 0 <= self.forgetting_archive_threshold <= 1 or not 0 <= self.forgetting_protected_importance <= 1:
+            raise ValueError("Forgetting archive thresholds must be between 0 and 1")
+        if self.forgetting_archive_grace_days < 0 or self.forgetting_prune_after_days < 0:
+            raise ValueError("Forgetting lifecycle durations must be non-negative")
 
     @classmethod
     def from_env(cls) -> "HindsightConfig":
@@ -2835,6 +2887,50 @@ class HindsightConfig:
             forgetting_score_alpha=float(os.getenv(ENV_FORGETTING_SCORE_ALPHA, str(DEFAULT_FORGETTING_SCORE_ALPHA))),
             forgetting_score_floor=float(os.getenv(ENV_FORGETTING_SCORE_FLOOR, str(DEFAULT_FORGETTING_SCORE_FLOOR))),
             forgetting_score_gamma=float(os.getenv(ENV_FORGETTING_SCORE_GAMMA, str(DEFAULT_FORGETTING_SCORE_GAMMA))),
+            forgetting_min_stability_days=float(
+                os.getenv(ENV_FORGETTING_MIN_STABILITY_DAYS, str(DEFAULT_FORGETTING_MIN_STABILITY_DAYS))
+            ),
+            forgetting_max_stability_days=float(
+                os.getenv(ENV_FORGETTING_MAX_STABILITY_DAYS, str(DEFAULT_FORGETTING_MAX_STABILITY_DAYS))
+            ),
+            forgetting_reinforcement_enabled=os.getenv(
+                ENV_FORGETTING_REINFORCEMENT_ENABLED, str(DEFAULT_FORGETTING_REINFORCEMENT_ENABLED)
+            ).lower()
+            in ("true", "1"),
+            forgetting_reinforcement_gain=float(
+                os.getenv(ENV_FORGETTING_REINFORCEMENT_GAIN, str(DEFAULT_FORGETTING_REINFORCEMENT_GAIN))
+            ),
+            forgetting_reinforcement_cooldown_hours=float(
+                os.getenv(
+                    ENV_FORGETTING_REINFORCEMENT_COOLDOWN_HOURS, str(DEFAULT_FORGETTING_REINFORCEMENT_COOLDOWN_HOURS)
+                )
+            ),
+            forgetting_event_batch_size=int(
+                os.getenv(ENV_FORGETTING_EVENT_BATCH_SIZE, str(DEFAULT_FORGETTING_EVENT_BATCH_SIZE))
+            ),
+            forgetting_archive_enabled=os.getenv(
+                ENV_FORGETTING_ARCHIVE_ENABLED, str(DEFAULT_FORGETTING_ARCHIVE_ENABLED)
+            ).lower()
+            in ("true", "1"),
+            forgetting_archive_threshold=float(
+                os.getenv(ENV_FORGETTING_ARCHIVE_THRESHOLD, str(DEFAULT_FORGETTING_ARCHIVE_THRESHOLD))
+            ),
+            forgetting_archive_grace_days=int(
+                os.getenv(ENV_FORGETTING_ARCHIVE_GRACE_DAYS, str(DEFAULT_FORGETTING_ARCHIVE_GRACE_DAYS))
+            ),
+            forgetting_protected_importance=float(
+                os.getenv(ENV_FORGETTING_PROTECTED_IMPORTANCE, str(DEFAULT_FORGETTING_PROTECTED_IMPORTANCE))
+            ),
+            forgetting_archive_batch_size=int(
+                os.getenv(ENV_FORGETTING_ARCHIVE_BATCH_SIZE, str(DEFAULT_FORGETTING_ARCHIVE_BATCH_SIZE))
+            ),
+            forgetting_auto_prune_enabled=os.getenv(
+                ENV_FORGETTING_AUTO_PRUNE_ENABLED, str(DEFAULT_FORGETTING_AUTO_PRUNE_ENABLED)
+            ).lower()
+            in ("true", "1"),
+            forgetting_prune_after_days=int(
+                os.getenv(ENV_FORGETTING_PRUNE_AFTER_DAYS, str(DEFAULT_FORGETTING_PRUNE_AFTER_DAYS))
+            ),
             # Cohere reranker (with backward-compatible fallback to shared API key)
             reranker_cohere_api_key=os.getenv(ENV_RERANKER_COHERE_API_KEY) or os.getenv(ENV_COHERE_API_KEY),
             reranker_cohere_model=os.getenv(ENV_RERANKER_COHERE_MODEL, DEFAULT_RERANKER_COHERE_MODEL),

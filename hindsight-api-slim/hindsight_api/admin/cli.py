@@ -51,6 +51,8 @@ BACKUP_TABLES = [
     "entities",
     "chunks",
     "memory_units",
+    "memory_retention_state",
+    "memory_reinforcement_events",
     "invalidated_memory_units",
     "unit_entities",
     "entity_cooccurrences",

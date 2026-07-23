@@ -1071,6 +1071,18 @@ For advanced authentication (JWT, OAuth, multi-tenant schemas), implement a cust
 | `HINDSIGHT_API_FORGETTING_SCORE_ALPHA` | Influence of the forgetting signal on the multiplicative rank boost. | `0.2` |
 | `HINDSIGHT_API_FORGETTING_SCORE_FLOOR` | Floor applied before ranking, preventing old but highly relevant memories from disappearing. | `0.2` |
 | `HINDSIGHT_API_FORGETTING_SCORE_GAMMA` | Exponent applied to retrievability before ranking. Values above 1 make decay more aggressive. | `1.0` |
+| `HINDSIGHT_API_FORGETTING_MIN_STABILITY_DAYS` / `HINDSIGHT_API_FORGETTING_MAX_STABILITY_DAYS` | Bounds for learned memory stability. | `1` / `3650` |
+| `HINDSIGHT_API_FORGETTING_REINFORCEMENT_ENABLED` | Persist Recall and Reflect usage events and consolidate memory stability in maintenance. | `true` |
+| `HINDSIGHT_API_FORGETTING_REINFORCEMENT_GAIN` | Maximum proportional stability gain before spacing, source, and diminishing-return adjustments. | `0.5` |
+| `HINDSIGHT_API_FORGETTING_REINFORCEMENT_COOLDOWN_HOURS` | Minimum spacing before repeated access can increase stability. | `6` |
+| `HINDSIGHT_API_FORGETTING_EVENT_BATCH_SIZE` | Reinforcement events processed per maintenance batch. | `500` |
+| `HINDSIGHT_API_FORGETTING_ARCHIVE_ENABLED` | Enable reversible lifecycle archiving. | `false` |
+| `HINDSIGHT_API_FORGETTING_ARCHIVE_THRESHOLD` | Lifecycle-score threshold below which the grace period starts. | `0.05` |
+| `HINDSIGHT_API_FORGETTING_ARCHIVE_GRACE_DAYS` | Continuous time below threshold before archiving. | `30` |
+| `HINDSIGHT_API_FORGETTING_PROTECTED_IMPORTANCE` | Importance at or above this value prevents automatic archiving and pruning. | `0.9` |
+| `HINDSIGHT_API_FORGETTING_ARCHIVE_BATCH_SIZE` | Lifecycle states examined per maintenance batch. | `1000` |
+| `HINDSIGHT_API_FORGETTING_AUTO_PRUNE_ENABLED` | Permanently delete sufficiently old archived memories. Destructive and disabled by default. | `false` |
+| `HINDSIGHT_API_FORGETTING_PRUNE_AFTER_DAYS` | Days an item must remain archived before physical deletion. | `365` |
 | `HINDSIGHT_API_MENTAL_MODEL_REFRESH_CONCURRENCY` | Max concurrent mental model refreshes | `8` |
 | `HINDSIGHT_API_ENABLE_MENTAL_MODEL_HISTORY` | Track history of content changes to each mental model (previous content + timestamp), stored one row per change in the `mental_model_history` table. Set to `false` to disable entirely — no history rows are written, reducing storage if audit trails are not needed. **This is how you turn the feature off** (not a zero cap). | `true` |
 | `HINDSIGHT_API_MENTAL_MODEL_HISTORY_MAX_ENTRIES` | Max history rows kept per mental model. On each refresh the previous version is inserted into the `mental_model_history` table and the oldest rows beyond this cap are deleted, so per-model history can't grow without bound. `0` or a negative value **removes the cap** (history then grows with every refresh — unbounded); to turn history off entirely set `HINDSIGHT_API_ENABLE_MENTAL_MODEL_HISTORY=false` instead. | `50` |

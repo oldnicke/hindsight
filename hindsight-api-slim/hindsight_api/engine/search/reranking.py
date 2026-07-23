@@ -200,13 +200,14 @@ def apply_combined_scoring(
             # Until persistent reinforcement state is introduced, created_at is
             # the only honest learning-time anchor. Event occurrence time remains
             # exclusively owned by the separate recency signal above.
-            last_reinforced_at=sr.retrieval.created_at,
-            stability_days=forgetting_base_stability_days,
+            last_reinforced_at=sr.retrieval.retention_last_reinforced_at or sr.retrieval.created_at,
+            stability_days=sr.retrieval.retention_stability_days or forgetting_base_stability_days,
             enabled=forgetting_enabled,
             apply_to_ranking=forgetting_apply_to_ranking,
             score_floor=forgetting_score_floor,
             score_gamma=forgetting_score_gamma,
             score_alpha=forgetting_score_alpha,
+            exempt=sr.retrieval.retention_exempt,
         )
         sr.retrievability = forgetting.retrievability
         sr.forgetting_signal = forgetting.signal
