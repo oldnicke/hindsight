@@ -19,10 +19,17 @@ from ._pg_search import normalize_pg_search_tokenizer
 from ._vector_index import validate_extension
 from .utils import mask_network_location
 
-# Load .env file, searching current and parent directories (overrides existing env vars)
-load_dotenv(find_dotenv(usecwd=True), override=True)
-
 logger = logging.getLogger(__name__)
+
+
+def load_dotenv_for_cli() -> None:
+    """Load a discovered .env file for Hindsight command-line entry points.
+
+    Library imports must not mutate the host application's environment. Standalone
+    commands retain .env convenience, while ``override=False`` ensures that values
+    explicitly supplied by the process take precedence over discovered files.
+    """
+    load_dotenv(find_dotenv(usecwd=True), override=False)
 
 
 class ConfigFieldAccessError(AttributeError):
