@@ -149,8 +149,9 @@ async def test_call_ignores_non_error_result_message(monkeypatch):
 @pytest.mark.asyncio
 async def test_call_records_span_for_unvalidated_dict(monkeypatch):
     """skip_validation returns a dict, which must still be serialized into the span."""
-    import hindsight_api.tracing as tracing
     import claude_agent_sdk
+
+    import hindsight_api.tracing as tracing
 
     async def fake_query(prompt: str, options: _FakeOptions):
         yield _FakeAssistantMessage(content=[_FakeTextBlock(text='{"fact": "x"}')])
@@ -174,6 +175,36 @@ async def test_call_records_span_for_unvalidated_dict(monkeypatch):
 
     assert result == {"fact": "x"}
     assert span_recorder.record_llm_call.call_args.kwargs["response_content"] == '{"fact": "x"}'
+
+
+@pytest.mark.asyncio
+async def test_call_survives_span_recorder_failure(monkeypatch):
+    """A raising span recorder must be logged, never break the call (best-effort, #3025)."""
+    import claude_agent_sdk
+
+    import hindsight_api.tracing as tracing
+
+    async def fake_query(prompt: str, options: _FakeOptions):
+        yield _FakeAssistantMessage(content=[_FakeTextBlock(text="ok")])
+        yield _FakeResultMessage(subtype="success", is_error=False, result="ok")
+
+    span_recorder = MagicMock()
+    span_recorder.record_llm_call.side_effect = RuntimeError("recorder exploded")
+    monkeypatch.setattr(claude_agent_sdk, "ClaudeAgentOptions", _FakeOptions)
+    monkeypatch.setattr(claude_agent_sdk, "AssistantMessage", _FakeAssistantMessage)
+    monkeypatch.setattr(claude_agent_sdk, "TextBlock", _FakeTextBlock)
+    monkeypatch.setattr(claude_agent_sdk, "ResultMessage", _FakeResultMessage)
+    monkeypatch.setattr(claude_agent_sdk, "query", fake_query)
+    monkeypatch.setattr(tracing, "get_span_recorder", lambda: span_recorder)
+
+    result = await _instantiate_provider().call(
+        messages=[{"role": "user", "content": "hi"}],
+        max_retries=0,
+        scope="test",
+    )
+
+    assert result == "ok"
+    span_recorder.record_llm_call.assert_called_once()
 
 
 @pytest.mark.asyncio
