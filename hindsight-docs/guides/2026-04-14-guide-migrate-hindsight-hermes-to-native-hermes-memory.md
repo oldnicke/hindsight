@@ -290,6 +290,27 @@ A healthy response tells you the provider has something real to talk to. If you 
 
 ## Troubleshooting common migration problems
 
+### Problem: every Hindsight tool reports an asyncio timeout context error
+
+The error `Timeout context manager should be used inside a task` is a known
+symptom of the deprecated `hindsight-hermes==0.5.0` package running through
+Hermes's legacy plugin tool dispatcher. It happens before the tool handler
+reaches Hindsight, so changing API URLs, increasing request timeouts, or
+replacing the handler body will not resolve it.
+
+Confirm and remove the old package from Hermes's own virtual environment, then
+enable the native provider:
+
+```bash
+$HOME/.hermes/hermes-agent/venv/bin/python -m pip show hindsight-hermes
+$HOME/.hermes/hermes-agent/venv/bin/python -m pip uninstall -y hindsight-hermes
+hermes memory setup    # select "hindsight"
+hermes memory status
+```
+
+Keep the same backend and `bank_id`; the migration changes the integration
+path, not the stored memory bank.
+
 ### Problem: the provider is configured, but nothing is recalled automatically
 
 Check `memory_mode`. If it is set to `tools`, auto-recall is disabled by design. The model has to call `hindsight_recall` explicitly. Switch to `hybrid` or `context` if you want automatic memory injection before every turn.

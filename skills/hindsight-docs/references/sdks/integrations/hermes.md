@@ -18,6 +18,11 @@ hermes memory setup    # select "hindsight"
 
 The wizard will prompt for your API key and API URL, and configure everything automatically.
 
+> **⚠️ Warning**
+>
+Do not install the deprecated `hindsight-hermes` PyPI package. Current Hermes
+releases include the maintained Hindsight provider. If the old package is
+already installed, [remove it before setup](#deprecated-plugin-tool-timeout).
 Or configure manually:
 
 ```bash
@@ -182,17 +187,34 @@ Re-enable later with `hermes tools enable memory`.
 
 ## Troubleshooting
 
-**Plugin not loading**: Verify the entry point is registered:
-```bash
-python -c "
-import importlib.metadata
-eps = importlib.metadata.entry_points(group='hermes_agent.plugins')
-print(list(eps))
-"
-```
-You should see `EntryPoint(name='hindsight', value='hindsight_hermes', ...)`.
+### Deprecated plugin tool timeout
 
-**Tools don't appear in `/tools`**: Check that `api_url` (or `HINDSIGHT_API_URL`) is set, or that `HINDSIGHT_API_KEY` is set for cloud mode. The plugin silently skips tool registration when unconfigured.
+If all three Hindsight tools return `Timeout context manager should be used
+inside a task`, check whether the deprecated `hindsight-hermes` package is
+still installed in Hermes's virtual environment:
+
+```bash
+$HOME/.hermes/hermes-agent/venv/bin/python -m pip show hindsight-hermes
+```
+
+Version 0.5.0 registered tools through Hermes's legacy plugin dispatch path.
+That path can invoke async tool handlers without a running asyncio task, so the
+HTTP client's timeout fails before the handler can make a request. Replacing a
+handler with a constant return value does not fix the dispatch failure.
+
+Remove the legacy package and configure Hermes's native provider instead:
+
+```bash
+$HOME/.hermes/hermes-agent/venv/bin/python -m pip uninstall -y hindsight-hermes
+hermes memory setup    # select "hindsight"
+hermes memory status
+```
+
+Use the same Hindsight API URL and `bank_id` during setup to retain access to
+existing memories. See the [migration guide](https://hindsight.vectorize.io/guides/guide-migrate-hindsight-hermes-to-native-hermes-memory)
+for the full procedure.
+
+**Tools don't appear in `/tools`**: Check that `api_url` (or `HINDSIGHT_API_URL`) is set, or that `HINDSIGHT_API_KEY` is set for cloud mode.
 
 **Connection refused**: Verify the Hindsight API is running:
 ```bash
