@@ -1052,6 +1052,19 @@ paths:
           title: Offset
           type: integer
         style: form
+      - description: Compute scope-aware staleness for each model. Expensive and disabled
+          by default.
+        explode: true
+        in: query
+        name: include_stale
+        required: false
+        schema:
+          default: false
+          description: Compute scope-aware staleness for each model. Expensive and
+            disabled by default.
+          title: Include Stale
+          type: boolean
+        style: form
       - explode: false
         in: header
         name: authorization

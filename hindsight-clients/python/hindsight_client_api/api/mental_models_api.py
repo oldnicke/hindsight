@@ -1879,9 +1879,9 @@ class MentalModelsApi:
             _query_params.append(('offset', offset))
             
         if include_stale is not None:
-
+            
             _query_params.append(('include_stale', include_stale))
-
+            
         # process the header parameters
         if authorization is not None:
             _header_params['authorization'] = authorization
@@ -2530,4 +2530,5 @@ class MentalModelsApi:
             _host=_host,
             _request_auth=_request_auth
         )
+
 
