@@ -11208,6 +11208,7 @@ class MemoryEngine(MemoryEngineInterface):
         detail: str = "full",
         limit: int = 100,
         offset: int = 0,
+        include_stale: bool = False,
         request_context: "RequestContext",
     ) -> list[dict[str, Any]]:
         """List pinned mental models for a bank.
@@ -11219,6 +11220,7 @@ class MemoryEngine(MemoryEngineInterface):
             detail: Detail level - 'metadata', 'content', or 'full'
             limit: Maximum number of results
             offset: Offset for pagination
+            include_stale: Compute scope-aware staleness for each model (expensive; opt-in)
             request_context: Request context for authentication
 
         Returns:
@@ -11260,7 +11262,13 @@ class MemoryEngine(MemoryEngineInterface):
                 *params,
             )
 
-            return [self._row_to_mental_model(row, detail=detail) for row in rows]
+            results = [self._row_to_mental_model(row, detail=detail) for row in rows]
+            if include_stale:
+                # Each check queries the model's own tag/fact scope. Keep this
+                # opt-in so ordinary list calls do not incur an N+1 workload.
+                for result, row in zip(results, rows, strict=True):
+                    result["is_stale"] = await self.compute_mental_model_is_stale(conn, bank_id, row)
+            return results
 
     async def get_mental_model(
         self,

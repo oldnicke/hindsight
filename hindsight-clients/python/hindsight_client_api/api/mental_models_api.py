@@ -16,7 +16,7 @@ from pydantic import validate_call, Field, StrictFloat, StrictStr, StrictInt
 from typing import Any, Dict, List, Optional, Tuple, Union
 from typing_extensions import Annotated
 
-from pydantic import Field, StrictStr, field_validator
+from pydantic import Field, StrictBool, StrictStr, field_validator
 from typing import Any, List, Optional
 from typing_extensions import Annotated
 from hindsight_client_api.models.async_operation_submit_response import AsyncOperationSubmitResponse
@@ -1548,6 +1548,7 @@ class MentalModelsApi:
         detail: Annotated[Optional[StrictStr], Field(description="Detail level: 'metadata' (names/tags only), 'content' (adds content/config), 'full' (includes reflect_response)")] = None,
         limit: Optional[Annotated[int, Field(le=1000, strict=True, ge=1)]] = None,
         offset: Optional[Annotated[int, Field(strict=True, ge=0)]] = None,
+        include_stale: Annotated[Optional[StrictBool], Field(description="Compute scope-aware staleness for each model. Expensive and disabled by default.")] = None,
         authorization: Optional[StrictStr] = None,
         _request_timeout: Union[
             None,
@@ -1578,6 +1579,8 @@ class MentalModelsApi:
         :type limit: int
         :param offset:
         :type offset: int
+        :param include_stale: Compute scope-aware staleness for each model. Expensive and disabled by default.
+        :type include_stale: bool
         :param authorization:
         :type authorization: str
         :param _request_timeout: timeout setting for this request. If one
@@ -1609,6 +1612,7 @@ class MentalModelsApi:
             detail=detail,
             limit=limit,
             offset=offset,
+            include_stale=include_stale,
             authorization=authorization,
             _request_auth=_request_auth,
             _content_type=_content_type,
@@ -1640,6 +1644,7 @@ class MentalModelsApi:
         detail: Annotated[Optional[StrictStr], Field(description="Detail level: 'metadata' (names/tags only), 'content' (adds content/config), 'full' (includes reflect_response)")] = None,
         limit: Optional[Annotated[int, Field(le=1000, strict=True, ge=1)]] = None,
         offset: Optional[Annotated[int, Field(strict=True, ge=0)]] = None,
+        include_stale: Annotated[Optional[StrictBool], Field(description="Compute scope-aware staleness for each model. Expensive and disabled by default.")] = None,
         authorization: Optional[StrictStr] = None,
         _request_timeout: Union[
             None,
@@ -1670,6 +1675,8 @@ class MentalModelsApi:
         :type limit: int
         :param offset:
         :type offset: int
+        :param include_stale: Compute scope-aware staleness for each model. Expensive and disabled by default.
+        :type include_stale: bool
         :param authorization:
         :type authorization: str
         :param _request_timeout: timeout setting for this request. If one
@@ -1701,6 +1708,7 @@ class MentalModelsApi:
             detail=detail,
             limit=limit,
             offset=offset,
+            include_stale=include_stale,
             authorization=authorization,
             _request_auth=_request_auth,
             _content_type=_content_type,
@@ -1732,6 +1740,7 @@ class MentalModelsApi:
         detail: Annotated[Optional[StrictStr], Field(description="Detail level: 'metadata' (names/tags only), 'content' (adds content/config), 'full' (includes reflect_response)")] = None,
         limit: Optional[Annotated[int, Field(le=1000, strict=True, ge=1)]] = None,
         offset: Optional[Annotated[int, Field(strict=True, ge=0)]] = None,
+        include_stale: Annotated[Optional[StrictBool], Field(description="Compute scope-aware staleness for each model. Expensive and disabled by default.")] = None,
         authorization: Optional[StrictStr] = None,
         _request_timeout: Union[
             None,
@@ -1762,6 +1771,8 @@ class MentalModelsApi:
         :type limit: int
         :param offset:
         :type offset: int
+        :param include_stale: Compute scope-aware staleness for each model. Expensive and disabled by default.
+        :type include_stale: bool
         :param authorization:
         :type authorization: str
         :param _request_timeout: timeout setting for this request. If one
@@ -1793,6 +1804,7 @@ class MentalModelsApi:
             detail=detail,
             limit=limit,
             offset=offset,
+            include_stale=include_stale,
             authorization=authorization,
             _request_auth=_request_auth,
             _content_type=_content_type,
@@ -1819,6 +1831,7 @@ class MentalModelsApi:
         detail,
         limit,
         offset,
+        include_stale,
         authorization,
         _request_auth,
         _content_type,
@@ -1865,6 +1878,10 @@ class MentalModelsApi:
             
             _query_params.append(('offset', offset))
             
+        if include_stale is not None:
+
+            _query_params.append(('include_stale', include_stale))
+
         # process the header parameters
         if authorization is not None:
             _header_params['authorization'] = authorization
@@ -2513,5 +2530,4 @@ class MentalModelsApi:
             _host=_host,
             _request_auth=_request_auth
         )
-
 

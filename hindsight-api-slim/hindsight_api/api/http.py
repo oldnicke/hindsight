@@ -4946,6 +4946,10 @@ def _register_routes(app: FastAPI):
         ),
         limit: int = Query(100, ge=1, le=1000),
         offset: int = Query(0, ge=0),
+        include_stale: bool = Query(
+            False,
+            description="Compute scope-aware staleness for each model. Expensive and disabled by default.",
+        ),
         request_context: RequestContext = Depends(get_request_context),
     ):
         """List mental models for a bank."""
@@ -4957,6 +4961,7 @@ def _register_routes(app: FastAPI):
                 detail=detail,
                 limit=limit,
                 offset=offset,
+                include_stale=include_stale,
                 request_context=request_context,
             )
             return MentalModelListResponse(items=[MentalModelResponse(**m) for m in mental_models])

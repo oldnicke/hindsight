@@ -1528,6 +1528,18 @@
             }
           },
           {
+            "name": "include_stale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Compute scope-aware staleness for each model. Expensive and disabled by default.",
+              "default": false,
+              "title": "Include Stale"
+            },
+            "description": "Compute scope-aware staleness for each model. Expensive and disabled by default."
+          },
+          {
             "name": "authorization",
             "in": "header",
             "required": false,

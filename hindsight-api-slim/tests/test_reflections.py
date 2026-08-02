@@ -356,7 +356,18 @@ class TestMentalModelsAPI:
         # Find our mental model
         mental_model = next((m for m in mental_models if m["name"] == "API Test Mental Model"), None)
         assert mental_model is not None, f"Mental model not found. Items: {mental_models}"
+        assert "is_stale" not in mental_model
         mental_model_id = mental_model["id"]
+
+        # Staleness is scope-aware and requires an extra query per model, so
+        # list callers must explicitly opt in when they need an exact summary.
+        response = await api_client.get(
+            f"/v1/default/banks/{test_bank_id}/mental-models",
+            params={"include_stale": "true", "detail": "metadata"},
+        )
+        assert response.status_code == 200
+        with_staleness = next(m for m in response.json()["items"] if m["id"] == mental_model_id)
+        assert isinstance(with_staleness["is_stale"], bool)
 
         # Get the mental model
         response = await api_client.get(f"/v1/default/banks/{test_bank_id}/mental-models/{mental_model_id}")

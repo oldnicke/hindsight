@@ -683,6 +683,7 @@ type ApiListMentalModelsRequest struct {
 	detail *string
 	limit *int32
 	offset *int32
+	includeStale *bool
 	authorization *string
 }
 
@@ -711,6 +712,12 @@ func (r ApiListMentalModelsRequest) Limit(limit int32) ApiListMentalModelsReques
 
 func (r ApiListMentalModelsRequest) Offset(offset int32) ApiListMentalModelsRequest {
 	r.offset = &offset
+	return r
+}
+
+// Compute scope-aware staleness for each model. Expensive and disabled by default.
+func (r ApiListMentalModelsRequest) IncludeStale(includeStale bool) ApiListMentalModelsRequest {
+	r.includeStale = &includeStale
 	return r
 }
 
@@ -796,6 +803,12 @@ func (a *MentalModelsAPIService) ListMentalModelsExecute(r ApiListMentalModelsRe
 	} else {
 		var defaultValue int32 = 0
 		r.offset = &defaultValue
+	}
+	if r.includeStale != nil {
+		parameterAddToHeaderOrQuery(localVarQueryParams, "include_stale", r.includeStale, "form", "")
+	} else {
+		var defaultValue bool = false
+		r.includeStale = &defaultValue
 	}
 	// to determine the Content-Type header
 	localVarHTTPContentTypes := []string{}

@@ -1172,6 +1172,7 @@ class Hindsight:
         detail: Literal["metadata", "content", "full"] | None = None,
         limit: int | None = None,
         offset: int | None = None,
+        include_stale: bool | None = None,
     ):
         """
         List all mental models in a bank (sync wrapper — use ``await client.mental_models.list_mental_models(...)`` in async code).
@@ -1186,6 +1187,7 @@ class Hindsight:
                 level to avoid pulling large payloads you don't need.
             limit: Maximum number of mental models to return
             offset: Number of mental models to skip (for pagination)
+            include_stale: Whether to compute scope-aware staleness for each model
 
         Returns:
             ListMentalModelsResponse with items
@@ -1198,6 +1200,7 @@ class Hindsight:
                 detail=detail,
                 limit=limit,
                 offset=offset,
+                include_stale=include_stale,
                 _request_timeout=self._timeout,
             )
         )

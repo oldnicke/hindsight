@@ -889,6 +889,7 @@ export class HindsightClient {
       detail?: "metadata" | "content" | "full";
       limit?: number;
       offset?: number;
+      includeStale?: boolean;
       signal?: AbortSignal;
     }
   ): Promise<MentalModelListResponse> {
@@ -901,6 +902,7 @@ export class HindsightClient {
         ...(options?.detail !== undefined ? { detail: options.detail } : {}),
         ...(options?.limit !== undefined ? { limit: options.limit } : {}),
         ...(options?.offset !== undefined ? { offset: options.offset } : {}),
+        ...(options?.includeStale !== undefined ? { include_stale: options.includeStale } : {}),
       },
       signal: options?.signal,
     });

@@ -701,22 +701,13 @@ function FailedConsolidationsDialog({
   );
 }
 
-function MentalModelsCard({
-  models,
-  lastConsolidatedAt,
-}: {
-  models: MentalModel[];
-  lastConsolidatedAt: string | null;
-}) {
+function MentalModelsCard({ models }: { models: MentalModel[] }) {
   const t = useTranslations("bankStats");
   const total = models.length;
-  const consolidatedTime = lastConsolidatedAt ? new Date(lastConsolidatedAt).getTime() : 0;
-  const upToDate = models.filter((m) => {
-    if (!consolidatedTime) return true;
-    if (!m.last_refreshed_at) return false;
-    return new Date(m.last_refreshed_at).getTime() >= consolidatedTime;
-  }).length;
-  const stale = total - upToDate;
+  const knownModels = models.filter((m) => m.is_stale !== null && m.is_stale !== undefined);
+  const upToDate = knownModels.filter((m) => m.is_stale === false).length;
+  const stale = knownModels.filter((m) => m.is_stale === true).length;
+  const hasStaleness = knownModels.length > 0;
 
   return (
     <Card>
@@ -731,7 +722,15 @@ function MentalModelsCard({
           <div className="text-sm text-muted-foreground py-4">{t("noMentalModels")}</div>
         ) : (
           <>
-            <ProgressRow done={upToDate} total={total} doneColor={CHART_COLORS.success} />
+            {hasStaleness ? (
+              <ProgressRow
+                done={upToDate}
+                total={knownModels.length}
+                doneColor={CHART_COLORS.success}
+              />
+            ) : (
+              <div className="text-sm text-muted-foreground py-1">—</div>
+            )}
             <div className="grid grid-cols-3 gap-3 pt-1">
               <div className="space-y-0.5">
                 <div className="flex items-center gap-1.5">
@@ -741,7 +740,7 @@ function MentalModelsCard({
                   </span>
                 </div>
                 <span className="text-base font-semibold tabular-nums text-foreground block">
-                  {upToDate}
+                  {hasStaleness ? upToDate : "—"}
                 </span>
               </div>
               <div className="space-y-0.5">
@@ -752,7 +751,7 @@ function MentalModelsCard({
                   </span>
                 </div>
                 <span className="text-base font-semibold tabular-nums text-foreground block">
-                  {stale}
+                  {hasStaleness ? stale : "—"}
                 </span>
               </div>
               <div className="space-y-0.5">
@@ -1074,7 +1073,11 @@ export function BankStatsView() {
     try {
       const [statsData, mentalModelsData] = await Promise.all([
         client.getBankStats(currentBank),
-        client.listMentalModels(currentBank),
+        client.listMentalModels(currentBank, {
+          detail: "metadata",
+          limit: 1000,
+          includeStale: true,
+        }),
       ]);
       setStats(statsData as BankStats);
       setMentalModels(mentalModelsData.items || []);
@@ -1124,7 +1127,7 @@ export function BankStatsView() {
             total={stats.total_nodes}
             lastConsolidatedAt={stats.last_consolidated_at}
           />
-          <MentalModelsCard models={mentalModels} lastConsolidatedAt={stats.last_consolidated_at} />
+          <MentalModelsCard models={mentalModels} />
         </div>
       </section>
 

@@ -5328,6 +5328,12 @@ export type ListMentalModelsData = {
      * Offset
      */
     offset?: number;
+    /**
+     * Include Stale
+     *
+     * Compute scope-aware staleness for each model. Expensive and disabled by default.
+     */
+    include_stale?: boolean;
   };
   url: "/v1/default/banks/{bank_id}/mental-models";
 };

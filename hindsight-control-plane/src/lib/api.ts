@@ -1288,23 +1288,33 @@ export class ControlPlaneClient {
    */
   async listMentalModels(
     bankId: string,
-    tags?: string[],
-    tagsMatch?: string,
-    limit?: number,
-    offset?: number
+    options: {
+      tags?: string[];
+      tagsMatch?: string;
+      detail?: "metadata" | "content" | "full";
+      limit?: number;
+      offset?: number;
+      includeStale?: boolean;
+    } = {}
   ) {
     const params = new URLSearchParams();
-    if (tags && tags.length > 0) {
-      tags.forEach((t) => params.append("tags", t));
+    if (options.tags && options.tags.length > 0) {
+      options.tags.forEach((t) => params.append("tags", t));
     }
-    if (tagsMatch) {
-      params.append("tags_match", tagsMatch);
+    if (options.tagsMatch) {
+      params.append("tags_match", options.tagsMatch);
     }
-    if (limit !== undefined) {
-      params.append("limit", String(limit));
+    if (options.detail) {
+      params.append("detail", options.detail);
     }
-    if (offset !== undefined) {
-      params.append("offset", String(offset));
+    if (options.limit !== undefined) {
+      params.append("limit", String(options.limit));
+    }
+    if (options.offset !== undefined) {
+      params.append("offset", String(options.offset));
+    }
+    if (options.includeStale !== undefined) {
+      params.append("include_stale", String(options.includeStale));
     }
     const query = params.toString();
     return this.fetchApi<{
@@ -1335,6 +1345,7 @@ export class ControlPlaneClient {
           text: string;
           based_on: Record<string, Array<{ id: string; text: string; type: string }>>;
         };
+        is_stale?: boolean | null;
       }>;
     }>(bankApi(bankId, `/mental-models${query ? `?${query}` : ""}`));
   }
