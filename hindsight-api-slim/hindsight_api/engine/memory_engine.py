@@ -39,6 +39,7 @@ from ..config import (
     DEFAULT_REFLECT_SOURCE_FACTS_MAX_TOKENS,
     DEFAULT_STORE_DOCUMENT_TEXT,
     ENV_MODEL_INIT_TIMEOUT,
+    ENV_RERANKER_REQUIRED,
     HindsightConfig,
     LLMMemberConfig,
     LLMStrategyConfig,
@@ -5286,6 +5287,8 @@ class MemoryEngine(MemoryEngineInterface):
             scored_results: list = []
             pre_filtered_count = 0
             rerank_kind = "cross-encoder"
+            reranker_degraded = False
+            reranker_error_type: str | None = None
             try:
                 # Pre-filter candidates by RRF before the (optional) cross-encoder.
                 # RRF already provides good ranking; this caps cross-encoder cost.
@@ -5311,9 +5314,37 @@ class MemoryEngine(MemoryEngineInterface):
                     if request_context is not None:
                         request_context.raise_if_cancelled()
 
-                    # Ensure reranker is initialized (for lazy initialization mode)
-                    await reranker_instance.ensure_initialized()
-                    scored_results = await reranker_instance.rerank(query, merged_candidates)
+                    try:
+                        # Ensure reranker is initialized (for lazy initialization mode)
+                        await reranker_instance.ensure_initialized()
+                        scored_results = await reranker_instance.rerank(query, merged_candidates)
+                    except OperationCancelledError:
+                        raise
+                    except Exception as e:
+                        if get_config().reranker_required:
+                            raise
+
+                        # The retrieval candidates are already available, so an optional
+                        # refinement failure should reduce ranking quality instead of
+                        # discarding the recall. Do not log the exception message because
+                        # remote providers may include query or document content in it.
+                        reranker_degraded = True
+                        reranker_error_type = type(e).__name__
+                        rerank_kind = "rrf-fallback"
+                        logger.warning(
+                            "Reranker failed with %s; falling back to RRF ordering because %s=false",
+                            reranker_error_type,
+                            ENV_RERANKER_REQUIRED,
+                        )
+                        scored_results = [
+                            ScoredResult(
+                                candidate=mc,
+                                cross_encoder_score=0.0,
+                                cross_encoder_score_normalized=0.0,
+                                weight=0.0,
+                            )
+                            for mc in sorted(merged_candidates, key=lambda mc: mc.rrf_score, reverse=True)
+                        ]
                 else:
                     # "rrf" / "interleave": skip the cross-encoder and keep the fusion order
                     # (rrf_score is descending by fusion position for both). The cross-encoder
@@ -5339,6 +5370,10 @@ class MemoryEngine(MemoryEngineInterface):
                 )
             finally:
                 rerank_span.set_attribute("hindsight.scored_count", len(scored_results))
+                rerank_span.set_attribute("hindsight.reranker_type", rerank_kind)
+                rerank_span.set_attribute("hindsight.reranker_degraded", reranker_degraded)
+                if reranker_error_type is not None:
+                    rerank_span.set_attribute("hindsight.reranker_error_type", reranker_error_type)
                 if pre_filtered_count > 0:
                     rerank_span.set_attribute("hindsight.pre_filtered_count", pre_filtered_count)
                 rerank_span.end()
@@ -5365,7 +5400,9 @@ class MemoryEngine(MemoryEngineInterface):
             elif scored_results:
                 ce = reranker_instance.cross_encoder
                 # "rrf" mode is passthrough by construction; so is a configured "rrf" CE.
-                is_passthrough = (reranking == "rrf") or (ce is not None and ce.provider_name == "rrf")
+                is_passthrough = (
+                    reranker_degraded or (reranking == "rrf") or (ce is not None and ce.provider_name == "rrf")
+                )
                 scoring_config = get_config()
                 apply_combined_scoring(
                     scored_results,
@@ -5397,8 +5434,16 @@ class MemoryEngine(MemoryEngineInterface):
             # threshold is a no-op. There is deliberately no default — the
             # cross-encoder's absolute scores are not calibrated for a fixed cutoff
             # (a clearly-relevant match can score ~0.001 while its *ranking* is right).
-            min_reranker = min_scores.reranker if min_scores else None
+            requested_min_reranker = min_scores.reranker if min_scores else None
+            # A degraded recall has no real reranker score to compare. Applying
+            # the requested floor to the RRF-derived placeholder would turn the
+            # fail-open path back into an empty response.
+            min_reranker = None if reranker_degraded else requested_min_reranker
             min_final = min_scores.final if min_scores else None
+            if reranker_degraded and requested_min_reranker is not None:
+                log_buffer.append(
+                    f"  [4.9] min_scores.reranker={requested_min_reranker} skipped because reranking degraded"
+                )
             if (min_reranker is not None or min_final is not None) and scored_results:
                 before_min_score = len(scored_results)
                 scored_results = [
@@ -5423,7 +5468,13 @@ class MemoryEngine(MemoryEngineInterface):
                 tracer.add_phase_metric(
                     "reranking",
                     step_duration,
-                    {"reranker_type": rerank_kind, "candidates_reranked": len(scored_results)},
+                    {
+                        "reranker_type": rerank_kind,
+                        "candidates_reranked": len(scored_results),
+                        "degraded": reranker_degraded,
+                        "error_type": reranker_error_type,
+                        "reranker_min_score_skipped": reranker_degraded and requested_min_reranker is not None,
+                    },
                 )
                 # Combined scoring + additive boosts + final sort, plus the trace
                 # serialization of reranked entries done just above.
@@ -5969,12 +6020,14 @@ class MemoryEngine(MemoryEngineInterface):
             # Convert results to MemoryFact objects
             # Build per-result scores (final/reranker/semantic/text) keyed by id.
             # reranker is None when the configured reranker is a passthrough (rrf /
-            # interleave modes, or the RRFPassthroughCrossEncoder), since its
-            # cross_encoder_score_normalized is then a rank-derived placeholder, not a
-            # true relevance score.
+            # interleave modes, or the RRFPassthroughCrossEncoder) or the optional
+            # reranker degraded to RRF, since cross_encoder_score_normalized is then a
+            # rank-derived placeholder rather than a true relevance score.
             ce_model = self._cross_encoder_reranker.cross_encoder
-            reranker_passthrough = (reranking != "cross_encoder") or (
-                ce_model is not None and getattr(ce_model, "provider_name", None) == "rrf"
+            reranker_passthrough = (
+                reranker_degraded
+                or (reranking != "cross_encoder")
+                or (ce_model is not None and getattr(ce_model, "provider_name", None) == "rrf")
             )
             scores_by_id: dict[str, RecallScores] = {
                 sr.id: RecallScores(

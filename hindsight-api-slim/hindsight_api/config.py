@@ -445,6 +445,7 @@ ENV_LITELLM_API_BASE = "HINDSIGHT_API_LITELLM_API_BASE"
 ENV_LITELLM_API_KEY = "HINDSIGHT_API_LITELLM_API_KEY"
 
 ENV_RERANKER_PROVIDER = "HINDSIGHT_API_RERANKER_PROVIDER"
+ENV_RERANKER_REQUIRED = "HINDSIGHT_API_RERANKER_REQUIRED"
 ENV_RERANKER_SEND_BANK_AS_HEADER = "HINDSIGHT_API_RERANKER_SEND_BANK_AS_HEADER"
 ENV_RERANKER_LOCAL_MODEL = "HINDSIGHT_API_RERANKER_LOCAL_MODEL"
 ENV_RERANKER_LOCAL_FORCE_CPU = "HINDSIGHT_API_RERANKER_LOCAL_FORCE_CPU"
@@ -900,6 +901,7 @@ DEFAULT_EMBEDDINGS_GEMINI_FORCE_IPV4 = False
 DEFAULT_EMBEDDING_DIMENSION = 384
 
 DEFAULT_RERANKER_PROVIDER = "local"
+DEFAULT_RERANKER_REQUIRED = True
 DEFAULT_RERANKER_SEND_BANK_AS_HEADER = False
 DEFAULT_RERANKER_LOCAL_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 DEFAULT_RERANKER_LOCAL_FORCE_CPU = False  # Force CPU mode for local reranker
@@ -1948,6 +1950,7 @@ class HindsightConfig:
 
     # Reranker
     reranker_provider: str
+    reranker_required: bool = field(default=DEFAULT_RERANKER_REQUIRED, kw_only=True)
     reranker_send_bank_as_header: bool
     reranker_local_model: str
     reranker_local_force_cpu: bool
@@ -2905,6 +2908,7 @@ class HindsightConfig:
             or os.getenv(ENV_LLM_VERTEXAI_SERVICE_ACCOUNT_KEY),
             # Reranker
             reranker_provider=os.getenv(ENV_RERANKER_PROVIDER, DEFAULT_RERANKER_PROVIDER),
+            reranker_required=_parse_boolean_env(ENV_RERANKER_REQUIRED, DEFAULT_RERANKER_REQUIRED),
             reranker_send_bank_as_header=os.getenv(
                 ENV_RERANKER_SEND_BANK_AS_HEADER,
                 str(DEFAULT_RERANKER_SEND_BANK_AS_HEADER),
